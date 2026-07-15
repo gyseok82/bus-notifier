@@ -122,6 +122,12 @@
     .bplate{font-weight:700; white-space:nowrap}
     .bstop{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0}
     .bseat{margin-left:auto; color:var(--accent); font-weight:700; white-space:nowrap}
+    .busbadge{display:inline-flex; align-items:center; gap:3px; margin-left:8px; background:#111826; color:#fff;
+      font-size:10.5px; font-weight:800; padding:1px 7px; border-radius:999px; vertical-align:middle;
+      font-variant-numeric:tabular-nums}
+    .stop.hasbus .dot{background:#111826; border-color:#111826; box-shadow:0 0 0 5px rgba(17,24,38,.12);
+      width:15px; height:15px; z-index:1}
+    .stop.hasbus .nm{font-weight:800}
 
     .stops{list-style:none; margin:0; padding:8px 0}
     .stop{display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:4px;
@@ -359,6 +365,24 @@
             +(b.seat!=null?'<span class="bseat">여석 '+b.seat+'</span>':'')+'</div>').join("")
             : '<div class="busitem muted">이 방향에 운행 중인 버스가 없어요</div>')+'</div>';
         const rb=bEl.querySelector(".refresh"); if(rb) rb.onclick=()=>loadBuses(true);
+
+        // 정류소 타임라인(경로)에도 현재 버스 위치 표시
+        const g=groups[cur]||{stops:[]};
+        const stopsEl=detailEl.querySelector("#stops");
+        if(stopsEl){
+          const lis=stopsEl.children;
+          for(const li of lis){ li.classList.remove("hasbus"); const a=li.querySelector(".atbus"); if(a) a.innerHTML=""; }
+          mine.forEach(b=>{
+            let idx=b.stop_id?g.stops.findIndex(s=>s.id===b.stop_id):-1;
+            if(idx<0) idx=g.stops.findIndex(s=>s.seq===b.stop_seq);
+            if(idx<0) return;
+            const li=lis[idx]; if(!li) return;
+            li.classList.add("hasbus");
+            const a=li.querySelector(".atbus");
+            if(a){ const tail=(b.plate||"").replace(/[^0-9]/g,"").slice(-4);
+              a.innerHTML+='<span class="busbadge">🚌 '+esc(tail)+'</span>'; }
+          });
+        }
       }
 
       async function loadBuses(manual){
@@ -379,7 +403,7 @@
           return '<li class="stop'+(end?' end':'')+'" style="--railcol:'+t.color+'">'
             +'<span class="rail"><span class="dot"></span></span>'
             +'<span class="nm">'+esc(s.name)+(i===0?' <span class="admin">· 기점</span>':i===g.stops.length-1?' <span class="admin">· 종점</span>':'')
-            +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')+'</span>'
+            +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')+'<span class="atbus"></span></span>'
             +'<span class="seq">'+(i+1)+'</span></li>';
         }).join("");
         updateBusesUI();
