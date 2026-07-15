@@ -91,6 +91,7 @@ class Settings(BaseSettings):
 
     # 인천 노선정보 서비스(검색/노선도). 도착정보와 별개 서비스이며 이미 승인됨.
     incheon_route_base_url: str = "https://apis.data.go.kr/6280000/busRouteService"
+    incheon_location_base_url: str = "https://apis.data.go.kr/6280000/busLocationService"
     incheon_route_use_mock: bool = False
 
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)

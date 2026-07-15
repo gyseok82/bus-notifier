@@ -53,6 +53,17 @@ async def route_stops(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.get("/api/routes/{route_id}/buses")
+async def route_buses(
+    route_id: str, container: Container = Depends(get_container)
+) -> dict:
+    """노선에서 현재 운행 중인 버스의 위치/차량번호."""
+    try:
+        return await container.route_service.buses(route_id)
+    except BusApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class ConfigUpdate(BaseModel):
     """런타임 설정 변경 요청. 지정한 필드만 반영된다."""
 

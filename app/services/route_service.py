@@ -7,6 +7,25 @@ from loguru import logger
 
 from app.services.bus_service import BusApiError, _parse_root, _to_int
 
+# 인천 버스 API 의 POSX/POSY 는 EPSG:5181(중부원점, 카카오/다음 좌표계) 투영좌표.
+# 지도 표시를 위해 WGS84 위경도로 변환한다. pyproj 미설치 시 좌표는 None.
+try:
+    from pyproj import Transformer
+
+    _TM = Transformer.from_crs("EPSG:5181", "EPSG:4326", always_xy=True)
+except Exception:  # noqa: BLE001 - pyproj 없거나 PROJ 데이터 문제 시 좌표 생략
+    _TM = None
+
+
+def _to_lonlat(x: float | None, y: float | None) -> tuple[float | None, float | None]:
+    if _TM is None or x is None or y is None:
+        return (None, None)
+    try:
+        lon, lat = _TM.transform(x, y)
+        return (round(lon, 6), round(lat, 6))
+    except Exception:  # noqa: BLE001
+        return (None, None)
+
 
 class IncheonRouteService:
     """노선번호로 노선을 검색하고, 노선의 경유 정류소 목록을 조회한다."""
@@ -16,11 +35,13 @@ class IncheonRouteService:
         service_key: str,
         base_url: str,
         client: httpx.AsyncClient,
+        location_base_url: str = "https://apis.data.go.kr/6280000/busLocationService",
         use_mock: bool = False,
         timeout: float = 10.0,
     ) -> None:
         self._key = service_key
         self._base = base_url.rstrip("/")
+        self._loc_base = location_base_url.rstrip("/")
         self._client = client
         self._use_mock = use_mock
         self._timeout = timeout
@@ -48,6 +69,20 @@ class IncheonRouteService:
             f"노선도 조회({route_id})",
         )
         return {"route_id": route_id, "stops": parse_route_stops_xml(text)}
+
+    async def buses(self, route_id: str) -> dict:
+        """노선에서 현재 운행 중인 버스의 위치/차량번호."""
+        if self._use_mock:
+            return {"route_id": route_id, "buses": _MOCK_BUSES}
+
+        url = self._loc_base + "/getBusRouteLocation"
+        params = {"serviceKey": self._key, "routeId": route_id, "numOfRows": "200", "pageNo": "1"}
+        try:
+            resp = await self._client.get(url, params=params, timeout=self._timeout)
+            resp.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise BusApiError(f"버스 위치 조회({route_id}) 실패: {exc}") from exc
+        return {"route_id": route_id, "buses": parse_bus_locations_xml(resp.text)}
 
     async def _get(self, path: str, params: dict, what: str) -> str:
         url = self._base + path
@@ -88,6 +123,9 @@ def parse_route_stops_xml(xml_text: str) -> list[dict]:
         d = {c.tag: (c.text or "").strip() for c in it}
         if not d.get("BSTOPNM"):
             continue
+        x = _to_float(d.get("POSX"))
+        y = _to_float(d.get("POSY"))
+        lng, lat = _to_lonlat(x, y)
         stops.append(
             {
                 "seq": _to_int(d.get("BSTOPSEQ")) or 0,
@@ -95,12 +133,39 @@ def parse_route_stops_xml(xml_text: str) -> list[dict]:
                 "dir": d.get("DIRCD", "0"),
                 "id": d.get("BSTOPID", ""),
                 "admin": d.get("ADMINNM", ""),
-                "x": _to_float(d.get("POSX")),
-                "y": _to_float(d.get("POSY")),
+                "x": x,
+                "y": y,
+                "lat": lat,
+                "lng": lng,
             }
         )
     stops.sort(key=lambda s: s["seq"])
     return stops
+
+
+def parse_bus_locations_xml(xml_text: str) -> list[dict]:
+    root = _parse_root(xml_text)
+    out: list[dict] = []
+    for it in root.iter("itemList"):
+        d = {c.tag: (c.text or "").strip() for c in it}
+        if not d.get("BUSID"):
+            continue
+        seat = _to_int(d.get("REMAIND_SEAT"))
+        out.append(
+            {
+                "bus_id": d.get("BUSID", ""),
+                "plate": d.get("BUS_NUM_PLATE", ""),
+                "dir": d.get("DIRCD", "0"),
+                "stop_seq": _to_int(d.get("LATEST_STOPSEQ")),
+                "stop_id": d.get("LATEST_STOP_ID", ""),
+                "stop_name": d.get("LATEST_STOP_NAME", ""),
+                # 255 등은 정보없음으로 간주
+                "seat": seat if (seat is not None and 0 <= seat <= 200) else None,
+                "low_floor": d.get("LOW_TP_CD") == "1",
+                "last": d.get("LASTBUSYN") == "1",
+            }
+        )
+    return out
 
 
 def _to_float(v: str | None) -> float | None:
@@ -128,4 +193,8 @@ _MOCK_STOPS = [
      "admin": "마포구", "x": 180000.0, "y": 450000.0},
     {"seq": 5, "name": "힐스테이트레이크송도4차", "dir": "1", "id": "164000786",
      "admin": "연수구", "x": 165797.7, "y": 431896.4},
+]
+_MOCK_BUSES = [
+    {"bus_id": "7331664", "plate": "인천73아1664", "dir": "0", "stop_seq": 2,
+     "stop_id": "164000123", "stop_name": "송도역", "seat": 40, "low_floor": False, "last": False},
 ]

@@ -63,7 +63,10 @@ uvicorn app.main:app --reload --port 8010
 - Swagger UI: **http://localhost:8010/docs**
 - `GET  /health`      상태 확인
 - `GET  /api/routes?no=1300`            노선번호 검색(→ ROUTEID/기점·종점)
-- `GET  /api/routes/{routeId}/stops`    경유 정류소(노선도, 방향별)
+- `GET  /api/routes/{routeId}/stops`    경유 정류소(노선도, 방향별, 위경도 포함)
+- `GET  /api/routes/{routeId}/buses`    현재 운행 버스 위치/차량번호(실시간)
+
+노선 상세 화면: 실제 지도(Leaflet/OSM)에 가는 길·오는 길 경로와 **실시간 버스 위치+차량번호**를 표시(20초 자동 갱신). 좌표는 서버에서 EPSG:5181→WGS84(pyproj) 변환.
 - `GET  /stops`       감시 정류소 목록
 - `GET  /arrival`     정류소별 도착 예정 버스
 - `POST /notify/test` 테스트 알림 발송

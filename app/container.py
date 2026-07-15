@@ -54,6 +54,7 @@ class Container:
             settings.incheon_api.service_key,
             settings.incheon_route_base_url,
             client,
+            location_base_url=settings.incheon_location_base_url,
             use_mock=settings.incheon_route_use_mock,
         )
         scheduler = BusScheduler(notify_service, settings.check_interval)

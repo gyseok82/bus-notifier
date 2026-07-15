@@ -98,8 +98,30 @@
       white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
     .dirtab .cnt{font-size:11px; color:var(--muted)}
 
-    canvas#map{display:block; width:100%; height:190px; background:
-      linear-gradient(#FBFCFE,#F4F7FB); border-top:1px solid var(--line-2); border-bottom:1px solid var(--line-2)}
+    #map{width:100%; height:260px; background:#E9EEF3; z-index:0;
+      border-top:1px solid var(--line-2); border-bottom:1px solid var(--line-2)}
+    .maplegend{display:flex; gap:16px; align-items:center; padding:9px 18px; font-size:12px; color:var(--muted);
+      border-bottom:1px solid var(--line-2)}
+    .maplegend span{display:inline-flex; align-items:center; gap:6px}
+    .maplegend i{width:16px; height:0; border-top-width:3px; border-top-style:solid; display:inline-block}
+    .mapnote{padding:14px 18px; font-size:12.5px; color:var(--muted)}
+    .busmk-in{display:flex; align-items:center; gap:3px; background:#111826; color:#fff; font-size:11px;
+      font-weight:800; padding:2px 7px 2px 5px; border-radius:999px; transform:translate(-50%,-50%);
+      white-space:nowrap; box-shadow:0 2px 7px rgba(0,0,0,.4); border:2px solid #fff}
+    .busmk-in b{font-variant-numeric:tabular-nums}
+    .buses{padding:14px 18px 4px}
+    .busehead{font-size:12.5px; font-weight:700; color:var(--ink); display:flex; align-items:center; gap:8px}
+    .busehead b{color:var(--seoul); font-variant-numeric:tabular-nums}
+    .refresh{margin-left:auto; border:1px solid var(--line); background:#fff; border-radius:8px;
+      width:30px; height:26px; cursor:pointer; color:var(--muted); font-size:14px}
+    .refresh:hover{border-color:var(--accent); color:var(--accent)}
+    .buslist{display:flex; flex-direction:column; gap:6px; margin-top:9px}
+    .busitem{display:flex; align-items:center; gap:10px; font-size:12.5px; background:#F7F9FC;
+      border:1px solid var(--line-2); border-radius:9px; padding:8px 11px}
+    .busitem.muted{color:var(--muted); justify-content:center}
+    .bplate{font-weight:700; white-space:nowrap}
+    .bstop{color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0}
+    .bseat{margin-left:auto; color:var(--accent); font-weight:700; white-space:nowrap}
 
     .stops{list-style:none; margin:0; padding:8px 0}
     .stop{display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:4px;
@@ -126,6 +148,8 @@
     }
     @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
   </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
   <div id="app">
@@ -166,9 +190,10 @@
     const $=s=>document.querySelector(s);
     const qEl=$("#q"),clearEl=$("#clear"),listEl=$("#list"),stateEl=$("#state"),
           metaEl=$("#meta"),countEl=$("#count"),detailEl=$("#detail"),filtersEl=$("#filters");
-    let results=[],activeType="all",timer=null,reqId=0;
+    let results=[],activeType="all",timer=null,reqId=0,mapInst=null,busTimer=null;
 
     function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+    function leaveDetail(){ if(busTimer){clearInterval(busTimer); busTimer=null;} if(mapInst){mapInst.remove(); mapInst=null;} }
 
     function showState(html){stateEl.innerHTML=html; stateEl.hidden=!html}
     function hint(){
@@ -180,7 +205,7 @@
     const debounce=v=>{clearTimeout(timer); timer=setTimeout(()=>run(v),250)};
 
     async function run(q){
-      q=(q||"").trim(); clearEl.hidden=!q; detailEl.innerHTML="";
+      q=(q||"").trim(); clearEl.hidden=!q; leaveDetail(); detailEl.innerHTML="";
       if(!q){results=[]; listEl.innerHTML=""; metaEl.hidden=true; filtersEl.hidden=true; hint(); return}
       const my=++reqId;
       listEl.innerHTML=""; metaEl.hidden=true; filtersEl.hidden=true;
@@ -224,20 +249,23 @@
       listEl.querySelectorAll(".row").forEach(b=>b.onclick=()=>openDetail(results[+b.dataset.i]));
     }
 
+    const DIRLBL=["가는 길","오는 길"];
+
     async function openDetail(r){
+      leaveDetail();
       const t=typeOf(r.tp);
       metaEl.hidden=true; listEl.innerHTML=""; filtersEl.hidden=true;
       showState('<div class="spinner"></div><p>노선도 불러오는 중…</p>');
-      let data;
+      let stops;
       try{
         const res=await fetch("/api/routes/"+encodeURIComponent(r.id)+"/stops");
         if(!res.ok) throw new Error("노선도 실패 ("+res.status+")");
-        data=await res.json();
+        stops=(await res.json()).stops||[];
       }catch(e){ showState('<h3>노선도를 불러오지 못했어요</h3><p>'+esc(e.message)+'</p>'+
         '<div class="hintchips"><button id="bk">← 목록으로</button></div>');
         $("#bk").onclick=()=>renderList(); return }
       showState("");
-      renderDetail(r,t,data.stops||[]);
+      renderDetail(r,t,stops);
     }
 
     function dirGroups(stops){
@@ -249,7 +277,8 @@
 
     function renderDetail(r,t,stops){
       const groups=dirGroups(stops);
-      let cur=0;
+      let cur=0, buses=[], busLayer=null;
+
       detailEl.innerHTML=
         '<div class="detail">'
         +'<div class="dhead"><button class="back" aria-label="목록으로">←</button>'
@@ -258,64 +287,108 @@
           +'<div class="sub2">'+t.label+(t.seoul?' · 서울·수도권행':'')+' · 정류소 '+stops.length+'개</div></div>'
           +'<button class="idmini" title="ROUTEID 복사">'+esc(r.id)+'</button></div>'
         +'<div class="dirtabs"></div>'
-        +'<canvas id="map"></canvas>'
+        +'<div id="map"></div>'
+        +'<div class="maplegend"><span><i style="border-color:'+t.color+'"></i>가는 길</span>'
+          +'<span><i style="border-color:'+t.color+'; border-top-style:dashed"></i>오는 길</span>'
+          +'<span>🚌 현재 버스</span></div>'
+        +'<div class="buses" id="buses"></div>'
         +'<ul class="stops" id="stops"></ul>'
         +'</div>';
-      detailEl.querySelector(".back").onclick=()=>{detailEl.innerHTML=""; renderList()};
+      detailEl.querySelector(".back").onclick=()=>{leaveDetail(); detailEl.innerHTML=""; renderList()};
       detailEl.querySelector(".idmini").onclick=()=>copy(r.id);
 
       const tabsEl=detailEl.querySelector(".dirtabs");
       tabsEl.innerHTML=groups.map((g,i)=>{
         const a=g.stops[0], b=g.stops[g.stops.length-1];
         return '<button class="dirtab" data-i="'+i+'" aria-selected="'+(i===cur)+'">'
-          +'<div class="lab">방향 '+(i+1)+'</div>'
+          +'<div class="lab">'+(DIRLBL[i]||("방향 "+(i+1)))+'</div>'
           +'<div class="flow">'+esc(a?a.name:"")+' → '+esc(b?b.name:"")+'</div>'
           +'<div class="cnt">'+g.stops.length+'개 정류소</div></button>';
       }).join("");
       tabsEl.querySelectorAll(".dirtab").forEach(tb=>tb.onclick=()=>{cur=+tb.dataset.i;
         tabsEl.querySelectorAll(".dirtab").forEach(x=>x.setAttribute("aria-selected",+x.dataset.i===cur)); paint()});
 
+      function coordOf(dir,bus){
+        const g=groups.find(x=>x.dir===dir)||groups[cur]||{stops:[]};
+        let st=bus.stop_id&&g.stops.find(s=>s.id===bus.stop_id);
+        if(!st) st=g.stops.find(s=>s.seq===bus.stop_seq);
+        return (st&&st.lat!=null)?[st.lat,st.lng]:null;
+      }
+
+      function buildMap(){
+        if(mapInst){mapInst.remove(); mapInst=null;}
+        const el=detailEl.querySelector("#map"); if(!el) return;
+        if(typeof L==="undefined"){el.innerHTML='<div class="mapnote">지도를 불러오지 못했어요.</div>'; return;}
+        const all=[];
+        mapInst=L.map(el,{scrollWheelZoom:false,attributionControl:false});
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapInst);
+        groups.forEach((g,i)=>{
+          const pts=g.stops.filter(s=>s.lat!=null).map(s=>[s.lat,s.lng]);
+          if(pts.length<2) return; all.push(...pts);
+          const active=i===cur;
+          L.polyline(pts,{color:t.color,weight:active?5:3,opacity:active?.9:.35,dashArray:active?null:"4 7"}).addTo(mapInst);
+        });
+        const act=(groups[cur]||{stops:[]}).stops.filter(s=>s.lat!=null);
+        if(act.length) [[act[0],"기점"],[act[act.length-1],"종점"]].forEach(([s,lab])=>
+          L.circleMarker([s.lat,s.lng],{radius:6,color:"#fff",weight:2.5,fillColor:t.color,fillOpacity:1})
+            .addTo(mapInst).bindTooltip(lab+": "+s.name,{direction:"top"}));
+        busLayer=L.layerGroup().addTo(mapInst);
+        if(all.length) mapInst.fitBounds(all,{padding:[26,26]});
+        setTimeout(()=>mapInst&&mapInst.invalidateSize(),60);
+      }
+
+      function updateBusesUI(){
+        const dir=(groups[cur]||{}).dir;
+        const mine=buses.filter(b=>b.dir===dir);
+        if(busLayer){
+          busLayer.clearLayers();
+          mine.forEach(b=>{
+            const c=coordOf(dir,b); if(!c) return;
+            const tail=(b.plate||"").replace(/[^0-9]/g,"").slice(-4);
+            const icon=L.divIcon({className:"busmk",html:'<div class="busmk-in">🚌<b>'+esc(tail)+'</b></div>',iconSize:[0,0]});
+            L.marker(c,{icon,zIndexOffset:1000}).addTo(busLayer)
+              .bindTooltip(esc(b.plate)+" · "+esc(b.stop_name),{direction:"top"});
+          });
+        }
+        const bEl=detailEl.querySelector("#buses"); if(!bEl) return;
+        bEl.innerHTML='<div class="busehead">현재 운행 <b>'+mine.length+'</b>대 · '+esc(DIRLBL[cur]||"이 방향")
+          +' <button class="refresh" title="새로고침">↻</button></div>'
+          +'<div class="buslist">'+(mine.length? mine.map(b=>
+            '<div class="busitem"><span class="bplate">🚌 '+esc(b.plate||b.bus_id)+'</span>'
+            +'<span class="bstop">'+esc(b.stop_name||"위치 확인 중")+'</span>'
+            +(b.seat!=null?'<span class="bseat">여석 '+b.seat+'</span>':'')+'</div>').join("")
+            : '<div class="busitem muted">이 방향에 운행 중인 버스가 없어요</div>')+'</div>';
+        const rb=bEl.querySelector(".refresh"); if(rb) rb.onclick=()=>loadBuses(true);
+      }
+
+      async function loadBuses(manual){
+        try{
+          const res=await fetch("/api/routes/"+encodeURIComponent(r.id)+"/buses");
+          if(!res.ok) throw 0;
+          buses=(await res.json()).buses||[];
+          updateBusesUI();
+          if(manual) toast("버스 위치 새로고침됨");
+        }catch(e){ if(manual) toast("버스 위치를 불러오지 못했어요"); }
+      }
+
       function paint(){
+        buildMap();
         const g=groups[cur]||{stops:[]};
-        drawMap(g.stops,t.color);
-        const railcol=t.color;
         detailEl.querySelector("#stops").innerHTML=g.stops.map((s,i)=>{
           const end=i===0||i===g.stops.length-1;
-          return '<li class="stop'+(end?' end':'')+'" style="--railcol:'+railcol+'">'
+          return '<li class="stop'+(end?' end':'')+'" style="--railcol:'+t.color+'">'
             +'<span class="rail"><span class="dot"></span></span>'
             +'<span class="nm">'+esc(s.name)+(i===0?' <span class="admin">· 기점</span>':i===g.stops.length-1?' <span class="admin">· 종점</span>':'')
             +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')+'</span>'
             +'<span class="seq">'+(i+1)+'</span></li>';
         }).join("");
+        updateBusesUI();
       }
-      paint();
-      window.addEventListener("resize",()=>{const g=groups[cur]; if(g) drawMap(g.stops,t.color)},{passive:true});
-    }
 
-    function drawMap(stops,color){
-      const cv=detailEl.querySelector("#map"); if(!cv) return;
-      const pts=stops.filter(s=>s.x!=null&&s.y!=null).map(s=>({x:s.x,y:s.y}));
-      const dpr=Math.min(window.devicePixelRatio||1,2);
-      const w=cv.clientWidth, h=cv.clientHeight; cv.width=w*dpr; cv.height=h*dpr;
-      const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
-      if(pts.length<2){ctx.fillStyle="#98A1B2"; ctx.font="13px sans-serif"; ctx.textAlign="center";
-        ctx.fillText("좌표 정보가 없어 노선 형태를 표시할 수 없어요",w/2,h/2); return}
-      const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
-      const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-      const pad=24, sx=(maxX-minX)||1, sy=(maxY-minY)||1, sc=Math.min((w-2*pad)/sx,(h-2*pad)/sy);
-      const ox=(w-sc*sx)/2, oy=(h-sc*sy)/2;
-      const X=p=>ox+(p.x-minX)*sc, Y=p=>h-(oy+(p.y-minY)*sc); // POSY 위로 증가 → 뒤집기
-      ctx.beginPath(); pts.forEach((p,i)=>{const x=X(p),y=Y(p); i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
-      ctx.strokeStyle=color; ctx.lineWidth=3; ctx.lineJoin="round"; ctx.lineCap="round"; ctx.globalAlpha=.85; ctx.stroke();
-      ctx.globalAlpha=1;
-      // 중간 정류소 점
-      ctx.fillStyle="#fff"; ctx.strokeStyle=color; ctx.lineWidth=1.5;
-      pts.forEach((p,i)=>{if(i===0||i===pts.length-1)return; ctx.beginPath(); ctx.arc(X(p),Y(p),2.4,0,7); ctx.fill(); ctx.stroke()});
-      // 기점/종점 강조
-      [[pts[0],"기점"],[pts[pts.length-1],"종점"]].forEach(([p])=>{
-        ctx.beginPath(); ctx.arc(X(p),Y(p),5.5,0,7); ctx.fillStyle=color; ctx.fill();
-        ctx.lineWidth=2.5; ctx.strokeStyle="#fff"; ctx.stroke();
-      });
+      paint();
+      loadBuses(false);
+      busTimer=setInterval(()=>loadBuses(false),20000);
+      window.addEventListener("resize",()=>{mapInst&&mapInst.invalidateSize()},{passive:true});
     }
 
     let tt;
