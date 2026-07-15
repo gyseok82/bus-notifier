@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>인천 버스 노선 검색</title>
+  <style>
+    :root{
+      --bg:#F4F6FA; --card:#FFFFFF; --ink:#12161D; --muted:#5B6474;
+      --line:#E4E9F1; --line-2:#EEF1F7; --accent:#3D5AFE; --accent-weak:#EAEEFF;
+      --seoul:#E23D28;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0}
+    body{
+      background:radial-gradient(1200px 400px at 50% -180px,#E8EDFF 0%,rgba(232,237,255,0) 60%),var(--bg);
+      color:var(--ink); min-height:100vh;
+      font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Malgun Gothic",system-ui,sans-serif;
+      -webkit-font-smoothing:antialiased;
+    }
+    #app{max-width:820px; margin:0 auto; padding:0 20px 80px}
+
+    .masthead{position:sticky; top:0; z-index:5; padding-top:26px;
+      background:linear-gradient(var(--bg) 74%, rgba(244,246,250,0))}
+    .brand{display:flex; align-items:center; gap:14px; margin-bottom:18px}
+    .mark{font-size:30px}
+    h1{font-size:23px; font-weight:800; letter-spacing:-.02em; margin:0}
+    .sub{margin:3px 0 0; font-size:13px; color:var(--muted)}
+
+    .searchbar{display:flex; align-items:center; gap:10px; background:var(--card);
+      border:1.5px solid var(--line); border-radius:14px; padding:0 14px; height:54px;
+      box-shadow:0 1px 2px rgba(20,30,60,.04); transition:border-color .15s,box-shadow .15s}
+    .searchbar:focus-within{border-color:var(--accent); box-shadow:0 0 0 4px var(--accent-weak)}
+    .searchbar .ico{width:20px; height:20px; color:var(--muted); flex:none}
+    #q{flex:1; border:0; outline:0; background:transparent; font-size:16px; color:var(--ink);
+      font-family:inherit; height:100%}
+    #q::placeholder{color:#98A1B2}
+    .clear{border:0; background:#EDF0F6; color:#6B7486; width:26px; height:26px; border-radius:50%;
+      font-size:18px; line-height:1; cursor:pointer; flex:none}
+    .filters{display:flex; flex-wrap:wrap; gap:7px; padding:14px 0 8px}
+    .chip{font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; cursor:pointer;
+      border:1.5px solid var(--line); background:var(--card); color:var(--muted); transition:.12s}
+    .chip[aria-selected="true"]{background:var(--ink); border-color:var(--ink); color:#fff}
+
+    .resultmeta{font-size:11.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+      color:var(--muted); padding:6px 2px 12px}
+    .list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+    .row{display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:16px;
+      background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+      cursor:pointer; transition:border-color .12s,transform .04s; text-align:left; width:100%; font:inherit; color:inherit}
+    .row:hover{border-color:#CED6E6}
+    .row:active{transform:scale(.997)}
+    .row.seoul{border-left:4px solid var(--seoul); padding-left:13px}
+    .badge{min-width:64px; text-align:center; padding:8px 10px; border-radius:10px;
+      font-weight:800; font-size:16px; color:#fff; font-variant-numeric:tabular-nums}
+    .path{min-width:0}
+    .od{display:flex; align-items:center; gap:8px; font-size:14.5px; font-weight:600; line-height:1.35}
+    .od .o,.od .d{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:44%}
+    .od .arw{color:var(--muted); flex:none}
+    .tags{display:flex; align-items:center; gap:7px; margin-top:6px; flex-wrap:wrap}
+    .tag{font-size:11px; font-weight:700; padding:2px 8px; border-radius:6px; background:var(--line-2); color:#4A5365}
+    .tag.type{color:#fff}
+    .tag.seoul{background:var(--seoul); color:#fff}
+    .chev{color:#B4BDCE; flex:none}
+
+    .state{text-align:center; padding:56px 20px; color:var(--muted)}
+    .state h3{font-size:16px; color:var(--ink); margin:0 0 6px}
+    .state p{margin:0; font-size:13.5px}
+    .hintchips{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-top:16px}
+    .hintchips button{border:1.5px solid var(--line); background:var(--card); border-radius:999px;
+      padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer; color:var(--ink)}
+    .hintchips button:hover{border-color:var(--accent); color:var(--accent)}
+    .spinner{width:22px; height:22px; border:2.5px solid var(--line); border-top-color:var(--accent);
+      border-radius:50%; margin:0 auto 12px; animation:spin .7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* 노선도 상세 */
+    .detail{background:var(--card); border:1px solid var(--line); border-radius:16px; overflow:hidden}
+    .dhead{display:flex; align-items:center; gap:14px; padding:18px 18px 16px}
+    .back{border:1px solid var(--line); background:#fff; border-radius:10px; width:38px; height:38px;
+      cursor:pointer; font-size:18px; color:var(--ink); flex:none}
+    .back:hover{border-color:var(--accent); color:var(--accent)}
+    .dtitle{min-width:0}
+    .dtitle .r{display:flex; align-items:center; gap:10px}
+    .dtitle .r b{font-size:17px}
+    .dtitle .sub2{font-size:12.5px; color:var(--muted); margin-top:3px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .idmini{margin-left:auto; font-family:ui-monospace,Menlo,monospace; font-size:12px; color:#6B7486;
+      background:#F7F9FC; border:1px solid var(--line); border-radius:8px; padding:6px 9px; cursor:pointer; flex:none}
+    .idmini:hover{border-color:var(--accent); color:var(--accent)}
+
+    .dirtabs{display:flex; gap:8px; padding:0 18px 14px}
+    .dirtab{flex:1; border:1.5px solid var(--line); background:#fff; border-radius:11px; padding:9px 12px;
+      cursor:pointer; text-align:left; font:inherit}
+    .dirtab[aria-selected="true"]{border-color:var(--accent); background:var(--accent-weak)}
+    .dirtab .lab{font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.04em}
+    .dirtab .flow{font-size:13px; font-weight:700; margin-top:2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+    .dirtab .cnt{font-size:11px; color:var(--muted)}
+
+    canvas#map{display:block; width:100%; height:190px; background:
+      linear-gradient(#FBFCFE,#F4F7FB); border-top:1px solid var(--line-2); border-bottom:1px solid var(--line-2)}
+
+    .stops{list-style:none; margin:0; padding:8px 0}
+    .stop{display:grid; grid-template-columns:34px 1fr auto; align-items:center; gap:4px;
+      padding:0 18px; position:relative}
+    .stop .rail{position:relative; height:44px; display:flex; justify-content:center}
+    .stop .rail::before{content:""; position:absolute; top:0; bottom:0; width:3px; background:var(--railcol,#C7D0E0)}
+    .stop:first-child .rail::before{top:50%}
+    .stop:last-child .rail::before{bottom:50%}
+    .stop .dot{position:absolute; top:50%; transform:translateY(-50%); width:11px; height:11px;
+      border-radius:50%; background:#fff; border:3px solid var(--railcol,#C7D0E0)}
+    .stop.end .dot{width:15px; height:15px; background:var(--railcol,#C7D0E0)}
+    .stop .nm{font-size:14px; font-weight:600; padding:11px 0; line-height:1.3}
+    .stop.end .nm{font-weight:800}
+    .stop .admin{font-size:11px; color:var(--muted)}
+    .stop .seq{font-size:10.5px; color:#AEB6C6; font-variant-numeric:tabular-nums}
+
+    .toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(8px);
+      background:var(--ink); color:#fff; padding:11px 18px; border-radius:11px; font-size:13.5px;
+      font-weight:600; box-shadow:0 8px 24px rgba(10,15,30,.25); opacity:0; transition:.18s; pointer-events:none}
+    .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+    @media (max-width:520px){
+      .row{grid-template-columns:auto 1fr}
+      .chev{display:none}
+    }
+    @media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header class="masthead">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">🚌</span>
+        <div>
+          <h1>인천 버스 노선 검색</h1>
+          <p class="sub">번호로 검색하고, 노선을 선택하면 노선도를 볼 수 있어요</p>
+        </div>
+      </div>
+      <div class="searchbar">
+        <svg viewBox="0 0 24 24" class="ico" aria-hidden="true"><path d="M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="q" type="search" autocomplete="off" spellcheck="false"
+               placeholder="노선 번호를 입력하세요 (예: 1300, 9100, 16)" aria-label="노선 검색" />
+        <button id="clear" class="clear" aria-label="지우기" hidden>&times;</button>
+      </div>
+      <div class="filters" id="filters" hidden></div>
+    </header>
+
+    <main>
+      <div class="resultmeta" id="meta" hidden><span id="count">0</span>개 결과</div>
+      <ul id="list" class="list"></ul>
+      <div id="state" class="state"></div>
+      <div id="detail"></div>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <script>
+    const TYPES={
+      "4":{label:"광역",color:"#E23D28",seoul:true},"10":{label:"급행간선",color:"#C0362C"},
+      "8":{label:"급행",color:"#E8590C"},"1":{label:"간선",color:"#1C64F2"},
+      "2":{label:"지선",color:"#2F9E44"},"3":{label:"좌석",color:"#0C8599"},
+      "5":{label:"공항",color:"#495057"},"6":{label:"맞춤·순환",color:"#7048E8"},
+      "9":{label:"마을·지선",color:"#E67700"}};
+    const typeOf=tp=>TYPES[tp]||{label:"기타",color:"#868E96"};
+    const $=s=>document.querySelector(s);
+    const qEl=$("#q"),clearEl=$("#clear"),listEl=$("#list"),stateEl=$("#state"),
+          metaEl=$("#meta"),countEl=$("#count"),detailEl=$("#detail"),filtersEl=$("#filters");
+    let results=[],activeType="all",timer=null,reqId=0;
+
+    function esc(s){return (s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+
+    function showState(html){stateEl.innerHTML=html; stateEl.hidden=!html}
+    function hint(){
+      showState('<h3>노선 번호를 입력해 보세요</h3><p>번호 일부만 입력해도 관련 노선이 모두 나옵니다.</p>'+
+        '<div class="hintchips">'+["1300","9100","9200","16","111"].map(v=>'<button data-v="'+v+'">'+v+'</button>').join("")+'</div>');
+      stateEl.querySelectorAll(".hintchips button").forEach(b=>b.onclick=()=>{qEl.value=b.dataset.v; run(b.dataset.v); qEl.focus()});
+    }
+
+    const debounce=v=>{clearTimeout(timer); timer=setTimeout(()=>run(v),250)};
+
+    async function run(q){
+      q=(q||"").trim(); clearEl.hidden=!q; detailEl.innerHTML="";
+      if(!q){results=[]; listEl.innerHTML=""; metaEl.hidden=true; filtersEl.hidden=true; hint(); return}
+      const my=++reqId;
+      listEl.innerHTML=""; metaEl.hidden=true; filtersEl.hidden=true;
+      showState('<div class="spinner"></div><p>검색 중…</p>');
+      try{
+        const res=await fetch("/api/routes?no="+encodeURIComponent(q));
+        if(my!==reqId) return;
+        if(!res.ok) throw new Error("검색 실패 ("+res.status+")");
+        results=await res.json();
+      }catch(e){ if(my!==reqId) return; showState('<h3>불러오지 못했어요</h3><p>'+esc(e.message)+'</p>'); return }
+      if(my!==reqId) return;
+      activeType="all"; renderFilters(); renderList();
+    }
+
+    function renderFilters(){
+      const types=[...new Set(results.map(r=>r.tp))];
+      if(results.length===0||types.length<=1){filtersEl.hidden=true; return}
+      const defs=[{k:"all",l:"전체"}].concat(types.map(t=>({k:t,l:typeOf(t).label})));
+      filtersEl.innerHTML=defs.map(d=>'<button class="chip" data-k="'+d.k+'" aria-selected="'+(d.k===activeType)+'">'+d.l+'</button>').join("");
+      filtersEl.hidden=false;
+      filtersEl.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{activeType=c.dataset.k;
+        filtersEl.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-selected",x.dataset.k===activeType)); renderList()});
+    }
+
+    function renderList(){
+      const items=results.filter(r=>activeType==="all"||r.tp===activeType);
+      showState("");
+      if(!items.length){metaEl.hidden=true; listEl.innerHTML=""; showState('<h3>결과가 없어요</h3><p>다른 번호로 검색해 보세요.</p>'); return}
+      metaEl.hidden=false; countEl.textContent=items.length;
+      listEl.innerHTML=items.map((r,i)=>{
+        const t=typeOf(r.tp);
+        return '<li><button class="row'+(t.seoul?' seoul':'')+'" data-i="'+results.indexOf(r)+'">'
+          +'<span class="badge" style="background:'+t.color+'">'+esc(r.no)+'</span>'
+          +'<span class="path"><span class="od"><span class="o">'+esc(r.origin)+'</span>'
+          +'<span class="arw">→</span><span class="d">'+esc(r.dest)+'</span></span>'
+          +'<span class="tags"><span class="tag type" style="background:'+t.color+'">'+t.label+'</span>'
+          +(t.seoul?'<span class="tag seoul">서울·수도권행</span>':'')+'</span></span>'
+          +'<svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>'
+          +'</button></li>';
+      }).join("");
+      listEl.querySelectorAll(".row").forEach(b=>b.onclick=()=>openDetail(results[+b.dataset.i]));
+    }
+
+    async function openDetail(r){
+      const t=typeOf(r.tp);
+      metaEl.hidden=true; listEl.innerHTML=""; filtersEl.hidden=true;
+      showState('<div class="spinner"></div><p>노선도 불러오는 중…</p>');
+      let data;
+      try{
+        const res=await fetch("/api/routes/"+encodeURIComponent(r.id)+"/stops");
+        if(!res.ok) throw new Error("노선도 실패 ("+res.status+")");
+        data=await res.json();
+      }catch(e){ showState('<h3>노선도를 불러오지 못했어요</h3><p>'+esc(e.message)+'</p>'+
+        '<div class="hintchips"><button id="bk">← 목록으로</button></div>');
+        $("#bk").onclick=()=>renderList(); return }
+      showState("");
+      renderDetail(r,t,data.stops||[]);
+    }
+
+    function dirGroups(stops){
+      const g={};
+      stops.forEach(s=>{(g[s.dir]=g[s.dir]||[]).push(s)});
+      Object.values(g).forEach(a=>a.sort((x,y)=>x.seq-y.seq));
+      return Object.keys(g).sort().map(k=>({dir:k,stops:g[k]}));
+    }
+
+    function renderDetail(r,t,stops){
+      const groups=dirGroups(stops);
+      let cur=0;
+      detailEl.innerHTML=
+        '<div class="detail">'
+        +'<div class="dhead"><button class="back" aria-label="목록으로">←</button>'
+          +'<div class="dtitle"><div class="r"><span class="badge" style="background:'+t.color+'">'+esc(r.no)+'</span>'
+          +'<b>'+esc(r.origin)+' ↔ '+esc(r.dest)+'</b></div>'
+          +'<div class="sub2">'+t.label+(t.seoul?' · 서울·수도권행':'')+' · 정류소 '+stops.length+'개</div></div>'
+          +'<button class="idmini" title="ROUTEID 복사">'+esc(r.id)+'</button></div>'
+        +'<div class="dirtabs"></div>'
+        +'<canvas id="map"></canvas>'
+        +'<ul class="stops" id="stops"></ul>'
+        +'</div>';
+      detailEl.querySelector(".back").onclick=()=>{detailEl.innerHTML=""; renderList()};
+      detailEl.querySelector(".idmini").onclick=()=>copy(r.id);
+
+      const tabsEl=detailEl.querySelector(".dirtabs");
+      tabsEl.innerHTML=groups.map((g,i)=>{
+        const a=g.stops[0], b=g.stops[g.stops.length-1];
+        return '<button class="dirtab" data-i="'+i+'" aria-selected="'+(i===cur)+'">'
+          +'<div class="lab">방향 '+(i+1)+'</div>'
+          +'<div class="flow">'+esc(a?a.name:"")+' → '+esc(b?b.name:"")+'</div>'
+          +'<div class="cnt">'+g.stops.length+'개 정류소</div></button>';
+      }).join("");
+      tabsEl.querySelectorAll(".dirtab").forEach(tb=>tb.onclick=()=>{cur=+tb.dataset.i;
+        tabsEl.querySelectorAll(".dirtab").forEach(x=>x.setAttribute("aria-selected",+x.dataset.i===cur)); paint()});
+
+      function paint(){
+        const g=groups[cur]||{stops:[]};
+        drawMap(g.stops,t.color);
+        const railcol=t.color;
+        detailEl.querySelector("#stops").innerHTML=g.stops.map((s,i)=>{
+          const end=i===0||i===g.stops.length-1;
+          return '<li class="stop'+(end?' end':'')+'" style="--railcol:'+railcol+'">'
+            +'<span class="rail"><span class="dot"></span></span>'
+            +'<span class="nm">'+esc(s.name)+(i===0?' <span class="admin">· 기점</span>':i===g.stops.length-1?' <span class="admin">· 종점</span>':'')
+            +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')+'</span>'
+            +'<span class="seq">'+(i+1)+'</span></li>';
+        }).join("");
+      }
+      paint();
+      window.addEventListener("resize",()=>{const g=groups[cur]; if(g) drawMap(g.stops,t.color)},{passive:true});
+    }
+
+    function drawMap(stops,color){
+      const cv=detailEl.querySelector("#map"); if(!cv) return;
+      const pts=stops.filter(s=>s.x!=null&&s.y!=null).map(s=>({x:s.x,y:s.y}));
+      const dpr=Math.min(window.devicePixelRatio||1,2);
+      const w=cv.clientWidth, h=cv.clientHeight; cv.width=w*dpr; cv.height=h*dpr;
+      const ctx=cv.getContext("2d"); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+      if(pts.length<2){ctx.fillStyle="#98A1B2"; ctx.font="13px sans-serif"; ctx.textAlign="center";
+        ctx.fillText("좌표 정보가 없어 노선 형태를 표시할 수 없어요",w/2,h/2); return}
+      const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+      const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+      const pad=24, sx=(maxX-minX)||1, sy=(maxY-minY)||1, sc=Math.min((w-2*pad)/sx,(h-2*pad)/sy);
+      const ox=(w-sc*sx)/2, oy=(h-sc*sy)/2;
+      const X=p=>ox+(p.x-minX)*sc, Y=p=>h-(oy+(p.y-minY)*sc); // POSY 위로 증가 → 뒤집기
+      ctx.beginPath(); pts.forEach((p,i)=>{const x=X(p),y=Y(p); i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+      ctx.strokeStyle=color; ctx.lineWidth=3; ctx.lineJoin="round"; ctx.lineCap="round"; ctx.globalAlpha=.85; ctx.stroke();
+      ctx.globalAlpha=1;
+      // 중간 정류소 점
+      ctx.fillStyle="#fff"; ctx.strokeStyle=color; ctx.lineWidth=1.5;
+      pts.forEach((p,i)=>{if(i===0||i===pts.length-1)return; ctx.beginPath(); ctx.arc(X(p),Y(p),2.4,0,7); ctx.fill(); ctx.stroke()});
+      // 기점/종점 강조
+      [[pts[0],"기점"],[pts[pts.length-1],"종점"]].forEach(([p])=>{
+        ctx.beginPath(); ctx.arc(X(p),Y(p),5.5,0,7); ctx.fillStyle=color; ctx.fill();
+        ctx.lineWidth=2.5; ctx.strokeStyle="#fff"; ctx.stroke();
+      });
+    }
+
+    let tt;
+    function copy(id){
+      const done=()=>toast("ROUTEID "+id+" 복사됨");
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(id).then(done).catch(()=>done());
+      else done();
+    }
+    function toast(m){const el=$("#toast"); el.textContent=m; el.hidden=false;
+      requestAnimationFrame(()=>el.classList.add("show"));
+      clearTimeout(tt); tt=setTimeout(()=>{el.classList.remove("show"); setTimeout(()=>el.hidden=true,200)},1600)}
+
+    qEl.addEventListener("input",e=>debounce(e.target.value));
+    clearEl.onclick=()=>{qEl.value=""; run(""); qEl.focus()};
+    hint();
+    qEl.focus();
+  </script>
+</body>
+</html>

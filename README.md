@@ -54,19 +54,27 @@ export KAKAO__ACCESS_TOKEN="카카오_액세스_토큰"
 ## 실행
 
 ```bash
-uvicorn app.main:app --reload
+python -m app                      # config.yaml 의 host/port(기본 8010) 사용
+# 또는 개발 중 자동 리로드:
+uvicorn app.main:app --reload --port 8010
 ```
 
+- 노선 검색 + 노선도 화면: **http://localhost:8010/**
+- Swagger UI: **http://localhost:8010/docs**
 - `GET  /health`      상태 확인
-- `GET  /arrival`     현재 도착 예정 버스(설정된 노선)
+- `GET  /api/routes?no=1300`            노선번호 검색(→ ROUTEID/기점·종점)
+- `GET  /api/routes/{routeId}/stops`    경유 정류소(노선도, 방향별)
+- `GET  /stops`       감시 정류소 목록
+- `GET  /arrival`     정류소별 도착 예정 버스
 - `POST /notify/test` 테스트 알림 발송
 - `POST /config`      런타임 설정 변경
 
 ```bash
-curl localhost:8000/health
-curl localhost:8000/arrival
-curl -X POST localhost:8000/notify/test
-curl -X POST localhost:8000/config -H 'Content-Type: application/json' \
+curl localhost:8010/health
+curl localhost:8010/stops
+curl localhost:8010/arrival
+curl -X POST localhost:8010/notify/test
+curl -X POST localhost:8010/config -H 'Content-Type: application/json' \
   -d '{"notify_minutes": 5, "check_interval": 30}'
 ```
 
@@ -80,8 +88,9 @@ pytest
 
 ```bash
 docker build -t bus-notifier .
-docker run --rm -p 8000:8000 \
-  -e BUS_API__SERVICE_KEY="..." \
+docker run --rm -p 8010:8010 \
+  -e INCHEON_API__SERVICE_KEY="..." \
+  -e SEOUL_API__SERVICE_KEY="..." \
   -e KAKAO__ACCESS_TOKEN="..." \
   bus-notifier
 ```

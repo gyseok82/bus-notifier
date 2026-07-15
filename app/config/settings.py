@@ -89,11 +89,19 @@ class Settings(BaseSettings):
         )
     )
 
+    # 인천 노선정보 서비스(검색/노선도). 도착정보와 별개 서비스이며 이미 승인됨.
+    incheon_route_base_url: str = "https://apis.data.go.kr/6280000/busRouteService"
+    incheon_route_use_mock: bool = False
+
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)
 
     database_path: str = "bus_notifier.db"
     dedup_ttl: int = 1800
     log_level: str = "INFO"
+
+    # 서버 실행 설정
+    host: str = "0.0.0.0"
+    port: int = 8010
 
     def api_for(self, provider: ProviderName) -> ApiSettings:
         return self.seoul_api if provider == "seoul" else self.incheon_api

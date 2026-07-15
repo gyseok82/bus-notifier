@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.container import Container
@@ -11,9 +14,43 @@ from app.services.kakao_service import KakaoError
 
 router = APIRouter()
 
+_INDEX_HTML = (Path(__file__).resolve().parent.parent / "web" / "index.html").read_text(
+    encoding="utf-8"
+)
+
 
 def get_container(request: Request) -> Container:
     return request.app.state.container
+
+
+@router.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index() -> str:
+    """노선 검색 + 노선도 화면."""
+    return _INDEX_HTML
+
+
+@router.get("/api/routes")
+async def search_routes(
+    no: str, container: Container = Depends(get_container)
+) -> list[dict]:
+    """노선번호(부분일치)로 검색."""
+    if not no.strip():
+        return []
+    try:
+        return await container.route_service.search(no.strip())
+    except BusApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.get("/api/routes/{route_id}/stops")
+async def route_stops(
+    route_id: str, container: Container = Depends(get_container)
+) -> dict:
+    """노선의 경유 정류소(노선도)."""
+    try:
+        return await container.route_service.stops(route_id)
+    except BusApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 class ConfigUpdate(BaseModel):
