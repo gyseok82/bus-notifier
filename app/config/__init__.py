@@ -1,8 +1,9 @@
 from app.config.settings import (
-    BusApiSettings,
+    ApiSettings,
     KakaoSettings,
     Settings,
+    StopConfig,
     load_settings,
 )
 
-__all__ = ["BusApiSettings", "KakaoSettings", "Settings", "load_settings"]
+__all__ = ["ApiSettings", "KakaoSettings", "Settings", "StopConfig", "load_settings"]

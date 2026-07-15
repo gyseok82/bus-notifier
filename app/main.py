@@ -17,7 +17,8 @@ from app.utils.logging import setup_logging
 async def lifespan(app: FastAPI):
     settings = load_settings()
     setup_logging(settings.log_level)
-    logger.info("bus-notifier 시작 (정류장={}, 노선={})", settings.station_id, settings.routes)
+    stop_names = [s.display_name() for s in settings.stops]
+    logger.info("bus-notifier 시작 (정류소 {}곳: {})", len(stop_names), ", ".join(stop_names))
 
     container = await Container.create(settings)
     app.state.container = container

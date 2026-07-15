@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
@@ -10,12 +12,14 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
+ProviderName = Literal["incheon", "seoul"]
 
-class BusApiSettings(BaseModel):
-    """인천 버스 Open API 접속 설정."""
 
-    base_url: str = "https://apis.data.go.kr/6280000/busArrivalService"
-    endpoint: str = "/getAllRouteBusArrivalList"
+class ApiSettings(BaseModel):
+    """지역 버스 Open API 접속 설정."""
+
+    base_url: str = ""
+    endpoint: str = ""
     service_key: str = ""
     timeout: float = 10.0
     # 실제 API 없이 동작 확인용 목업 모드
@@ -36,6 +40,22 @@ class KakaoSettings(BaseModel):
         return not self.access_token
 
 
+class StopConfig(BaseModel):
+    """알림을 받을 정류소 한 곳의 설정."""
+
+    provider: ProviderName = "incheon"
+    station_id: str
+    label: str = ""
+    # 이 정류소에서 대상으로 삼을 노선(인천=ROUTEID, 서울=노선번호/ID). 비우면 전체.
+    routes: list[str] = Field(default_factory=list)
+    # 정류소별 알림 조건 오버라이드(없으면 전역값 사용)
+    notify_minutes: int | None = None
+    notify_stations: int | None = None
+
+    def display_name(self) -> str:
+        return self.label or f"{self.provider}:{self.station_id}"
+
+
 class Settings(BaseSettings):
     """전체 설정. 환경변수가 config.yaml 값보다 우선한다."""
 
@@ -46,20 +66,37 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    station_id: str
-    routes: list[str] = Field(default_factory=list)
+    # 감시할 정류소 목록
+    stops: list[StopConfig] = Field(default_factory=list)
+
     check_interval: int = 60
 
-    # 알림 조건
+    # 전역 알림 조건(정류소별로 오버라이드 가능)
     notify_minutes: int = 10
     notify_stations: int | None = None
 
-    bus_api: BusApiSettings = Field(default_factory=BusApiSettings)
+    # 지역별 API 설정
+    incheon_api: ApiSettings = Field(
+        default_factory=lambda: ApiSettings(
+            base_url="https://apis.data.go.kr/6280000/busArrivalService",
+            endpoint="/getAllRouteBusArrivalList",
+        )
+    )
+    seoul_api: ApiSettings = Field(
+        default_factory=lambda: ApiSettings(
+            base_url="http://ws.bus.go.kr/api/rest/arrive",
+            endpoint="/getLowArrInfoByStId",
+        )
+    )
+
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)
 
     database_path: str = "bus_notifier.db"
     dedup_ttl: int = 1800
     log_level: str = "INFO"
+
+    def api_for(self, provider: ProviderName) -> ApiSettings:
+        return self.seoul_api if provider == "seoul" else self.incheon_api
 
     @classmethod
     def settings_customise_sources(

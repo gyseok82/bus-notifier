@@ -6,7 +6,7 @@ import httpx
 
 from app.config.settings import Settings, load_settings
 from app.repositories.dedup_repository import DedupRepository
-from app.services.bus_service import BusService
+from app.services.bus_service import BusProvider, build_providers
 from app.services.kakao_service import KakaoService
 from app.services.notify_service import NotifyService
 from app.services.scheduler import BusScheduler
@@ -20,7 +20,7 @@ class Container:
         settings: Settings,
         client: httpx.AsyncClient,
         dedup_repo: DedupRepository,
-        bus_service: BusService,
+        providers: dict[str, BusProvider],
         kakao_service: KakaoService,
         notify_service: NotifyService,
         scheduler: BusScheduler,
@@ -28,7 +28,7 @@ class Container:
         self.settings = settings
         self.client = client
         self.dedup_repo = dedup_repo
-        self.bus_service = bus_service
+        self.providers = providers
         self.kakao_service = kakao_service
         self.notify_service = notify_service
         self.scheduler = scheduler
@@ -41,16 +41,16 @@ class Container:
         dedup_repo = DedupRepository(settings.database_path, settings.dedup_ttl)
         await dedup_repo.init()
 
-        bus_service = BusService(settings.bus_api, client)
+        providers = build_providers(settings, client)
         kakao_service = KakaoService(settings.kakao, client)
-        notify_service = NotifyService(settings, bus_service, kakao_service, dedup_repo)
+        notify_service = NotifyService(settings, providers, kakao_service, dedup_repo)
         scheduler = BusScheduler(notify_service, settings.check_interval)
 
         return cls(
             settings=settings,
             client=client,
             dedup_repo=dedup_repo,
-            bus_service=bus_service,
+            providers=providers,
             kakao_service=kakao_service,
             notify_service=notify_service,
             scheduler=scheduler,
