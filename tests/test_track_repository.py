@@ -32,15 +32,30 @@ async def test_record_and_track_grouping():
 
 
 @pytest.mark.asyncio
-async def test_grid_snap_dedups_nearby_points():
+async def test_grid_snap_dedups_and_counts_hits():
     repo = await _repo()
-    # 격자(≈11m) 안에서 미세하게 다른 좌표는 하나로 합쳐진다.
-    first = await repo.record("R1", [{"dir": "0", "stop_seq": 1, "lat": 37.400000, "lng": 126.700000}])
-    dup = await repo.record("R1", [{"dir": "0", "stop_seq": 1, "lat": 37.400001, "lng": 126.700001}])
-    assert first == 1
-    assert dup == 0  # 같은 격자 → INSERT OR IGNORE
-    track = await repo.track("R1")
-    assert len(track["0"]["1"]) == 1
+    pt = {"dir": "0", "stop_seq": 1, "lat": 37.400000, "lng": 126.700000}
+    near = {"dir": "0", "stop_seq": 1, "lat": 37.400001, "lng": 126.700001}  # 같은 격자(≈11m)
+    await repo.record("R1", [pt])
+    await repo.record("R1", [near])
+    # 격자가 합쳐져 점은 1개
+    assert len((await repo.track("R1"))["0"]["1"]) == 1
+    # 2회 관측 → min_hits=2 로도 조회됨(1회였다면 걸러짐)
+    assert len((await repo.track("R1", min_hits=2))["0"]["1"]) == 1
+    await repo.close()
+
+
+@pytest.mark.asyncio
+async def test_min_hits_filters_one_off_glitches():
+    repo = await _repo()
+    # 도로 위 점은 반복 관측(3회), 글리치는 1회만.
+    for _ in range(3):
+        await repo.record("R1", [{"dir": "0", "stop_seq": 1, "lat": 37.40, "lng": 126.70}])
+    await repo.record("R1", [{"dir": "0", "stop_seq": 1, "lat": 37.50, "lng": 126.90}])  # 튐
+    only_solid = await repo.track("R1", min_hits=2)
+    assert only_solid["0"]["1"] == [[37.40, 126.70]]  # 글리치 제외
+    # 기본(min_hits=1)은 둘 다 포함
+    assert len((await repo.track("R1"))["0"]["1"]) == 2
     await repo.close()
 
 

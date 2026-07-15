@@ -8,12 +8,13 @@ from loguru import logger
 from app.repositories.track_repository import RouteTrackRepository
 from app.services.bus_service import BusApiError, _parse_root, _to_int
 
-# 인천 버스 API 의 POSX/POSY 는 EPSG:5181(중부원점, 카카오/다음 좌표계) 투영좌표.
+# 인천 버스 API 의 POSX/POSY 는 EPSG:5174(중부원점, Bessel) 투영좌표.
+# TAGO 실측 WGS84 와 대조 결과 5174 가 오차 ~15m 로 일치(5181 은 ~310m 남서 편향).
 # 지도 표시를 위해 WGS84 위경도로 변환한다. pyproj 미설치 시 좌표는 None.
 try:
     from pyproj import Transformer
 
-    _TM = Transformer.from_crs("EPSG:5181", "EPSG:4326", always_xy=True)
+    _TM = Transformer.from_crs("EPSG:5174", "EPSG:4326", always_xy=True)
 except Exception:  # noqa: BLE001 - pyproj 없거나 PROJ 데이터 문제 시 좌표 생략
     _TM = None
 
@@ -44,6 +45,7 @@ class IncheonRouteService:
         tago_route_prefix: str = "ICB",
         tago_enabled: bool = True,
         track_repo: RouteTrackRepository | None = None,
+        track_min_hits: int = 2,
     ) -> None:
         self._key = service_key
         self._base = base_url.rstrip("/")
@@ -58,6 +60,7 @@ class IncheonRouteService:
         self._tago_enabled = tago_enabled
         # 실시간 GPS 자취를 쌓아 도로 경로(노선도)를 학습하는 저장소(선택).
         self._track_repo = track_repo
+        self._track_min_hits = track_min_hits
 
     async def search(self, route_no: str) -> list[dict]:
         """노선번호(부분일치)로 검색. ROUTEID/기점/종점 등을 반환."""
@@ -112,7 +115,8 @@ class IncheonRouteService:
         """누적된 실시간 GPS 자취(도로 경로 학습 결과)를 반환한다."""
         if self._track_repo is None:
             return {"route_id": route_id, "track": {}}
-        return {"route_id": route_id, "track": await self._track_repo.track(route_id)}
+        track = await self._track_repo.track(route_id, min_hits=self._track_min_hits)
+        return {"route_id": route_id, "track": track}
 
     async def _merge_tago_positions(self, route_id: str, buses: list[dict]) -> None:
         """TAGO 위경도를 차량번호로 병합. 실패 시 조용히 스킵(정류소 스냅으로 폴백)."""

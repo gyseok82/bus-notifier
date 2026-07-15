@@ -102,6 +102,8 @@ class Settings(BaseSettings):
     tago_city_code: str = "23"
     tago_route_prefix: str = "ICB"
     tago_enabled: bool = True
+    # 노선도 학습: 이 횟수 이상 관측된 GPS 격자만 경로로 그린다(일회성 오차 제거).
+    track_min_hits: int = 2
 
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)
 
