@@ -271,16 +271,20 @@
       const t=typeOf(r.tp);
       metaEl.hidden=true; listEl.innerHTML=""; filtersEl.hidden=true;
       showState('<div class="spinner"></div><p>노선도 불러오는 중…</p>');
-      let stops;
+      let stops, track={};
       try{
-        const res=await fetch("/api/routes/"+encodeURIComponent(r.id)+"/stops");
-        if(!res.ok) throw new Error("노선도 실패 ("+res.status+")");
-        stops=(await res.json()).stops||[];
+        const [rs,rt]=await Promise.all([
+          fetch("/api/routes/"+encodeURIComponent(r.id)+"/stops"),
+          fetch("/api/routes/"+encodeURIComponent(r.id)+"/track").catch(()=>null),
+        ]);
+        if(!rs.ok) throw new Error("노선도 실패 ("+rs.status+")");
+        stops=(await rs.json()).stops||[];
+        if(rt&&rt.ok) track=(await rt.json()).track||{};
       }catch(e){ showState('<h3>노선도를 불러오지 못했어요</h3><p>'+esc(e.message)+'</p>'+
         '<div class="hintchips"><button id="bk">← 목록으로</button></div>');
         $("#bk").onclick=()=>renderList(); return }
       showState("");
-      renderDetail(r,t,stops);
+      renderDetail(r,t,stops,track);
     }
 
     function dirGroups(stops){
@@ -290,9 +294,10 @@
       return Object.keys(g).sort().map(k=>({dir:k,stops:g[k]}));
     }
 
-    function renderDetail(r,t,stops){
+    function renderDetail(r,t,stops,track){
       const groups=dirGroups(stops);
-      let cur=0, buses=[], busLayer=null, kmap=null, kbusOverlays=[];
+      let cur=0, buses=[], busLayer=null, kmap=null, kbusOverlays=[], trackTick=0, trackCount=0;
+      track=track||{};
 
       detailEl.innerHTML=
         '<div class="detail">'
@@ -332,8 +337,25 @@
         return (st&&st.lat!=null)?[st.lat,st.lng]:null;
       }
 
-      function buildMap(){
-        if(kakaoReady){ buildKakao(); return; }
+      // 정류소를 앵커로, 각 구간(정류소 seq→다음)에 누적된 실시간 GPS 자취를
+      // 끼워넣어 도로를 따라가는 경로점 배열을 만든다. 자취 없는 구간은 직선 폴백.
+      function seg2(a,b){const dx=a[0]-b[0],dy=a[1]-b[1];return dx*dx+dy*dy;}
+      function pathFor(g){
+        const tr=track[g.dir]||{}, pts=[];
+        g.stops.forEach(s=>{
+          if(s.lat==null) return;
+          const anchor=[s.lat,s.lng]; pts.push(anchor);
+          const bucket=tr[s.seq];
+          if(bucket&&bucket.length)
+            bucket.slice().sort((a,b)=>seg2(a,anchor)-seg2(b,anchor)).forEach(p=>pts.push([p[0],p[1]]));
+        });
+        return pts;
+      }
+      function countTrack(tr){let n=0;for(const d in tr)for(const s in tr[d])n+=tr[d][s].length;return n;}
+
+      function buildMap(preserve){
+        if(kakaoReady){ buildKakao(preserve); return; }
+        const keep=(preserve&&mapInst)?{c:mapInst.getCenter(),z:mapInst.getZoom()}:null;
         if(mapInst){mapInst.remove(); mapInst=null;}
         const el=detailEl.querySelector("#map"); if(!el) return;
         if(typeof L==="undefined"){el.innerHTML='<div class="mapnote">지도를 불러오지 못했어요.</div>'; return;}
@@ -341,7 +363,7 @@
         mapInst=L.map(el,{scrollWheelZoom:false,attributionControl:false});
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapInst);
         groups.forEach((g,i)=>{
-          const pts=g.stops.filter(s=>s.lat!=null).map(s=>[s.lat,s.lng]);
+          const pts=pathFor(g);
           if(pts.length<2) return; all.push(...pts);
           const active=i===cur;
           L.polyline(pts,{color:t.color,weight:active?5:3,opacity:active?.9:.35,dashArray:active?null:"4 7"}).addTo(mapInst);
@@ -351,18 +373,20 @@
           L.circleMarker([s.lat,s.lng],{radius:6,color:"#fff",weight:2.5,fillColor:t.color,fillOpacity:1})
             .addTo(mapInst).bindTooltip(lab+": "+s.name,{direction:"top"}));
         busLayer=L.layerGroup().addTo(mapInst);
-        if(all.length) mapInst.fitBounds(all,{padding:[26,26]});
+        if(keep) mapInst.setView(keep.c,keep.z);
+        else if(all.length) mapInst.fitBounds(all,{padding:[26,26]});
         setTimeout(()=>mapInst&&mapInst.invalidateSize(),60);
       }
 
-      function buildKakao(){
+      function buildKakao(preserve){
         const el=detailEl.querySelector("#map"); if(!el) return;
+        const keepC=(preserve&&kmap)?kmap.getCenter():null, keepL=(preserve&&kmap)?kmap.getLevel():null;
         el.innerHTML="";
-        kmap=new kakao.maps.Map(el,{center:new kakao.maps.LatLng(37.5,126.9),level:6});
+        kmap=new kakao.maps.Map(el,{center:keepC||new kakao.maps.LatLng(37.5,126.9),level:keepL||6});
         kbusOverlays=[];
         const bounds=new kakao.maps.LatLngBounds();
         groups.forEach((g,i)=>{
-          const path=g.stops.filter(s=>s.lat!=null).map(s=>new kakao.maps.LatLng(s.lat,s.lng));
+          const path=pathFor(g).map(p=>new kakao.maps.LatLng(p[0],p[1]));
           if(path.length<2) return;
           path.forEach(ll=>bounds.extend(ll));
           const active=i===cur;
@@ -375,7 +399,7 @@
             position:new kakao.maps.LatLng(s.lat,s.lng),
             content:'<div class="kend" style="background:'+t.color+'"></div>'});
         });
-        if(!bounds.isEmpty()) kmap.setBounds(bounds);
+        if(!keepC&&!bounds.isEmpty()) kmap.setBounds(bounds);
       }
 
       function placeKakaoBuses(mine,dir){
@@ -442,10 +466,23 @@
           updateBusesUI();
           if(manual) toast("버스 위치 새로고침됨");
         }catch(e){ if(manual) toast("버스 위치를 불러오지 못했어요"); }
+        // 주기적으로 학습된 도로 경로를 갱신(뷰포트 유지). 매 3회(약 60초)마다.
+        if(!manual && (++trackTick%3===0)) refreshTrack();
+      }
+
+      async function refreshTrack(){
+        try{
+          const res=await fetch("/api/routes/"+encodeURIComponent(r.id)+"/track");
+          if(!res.ok) return;
+          const nt=(await res.json()).track||{};
+          const c=countTrack(nt);
+          if(c!==trackCount){ track=nt; trackCount=c; buildMap(true); updateBusesUI(); }
+        }catch(e){}
       }
 
       function paint(){
         buildMap();
+        trackCount=countTrack(track);
         const g=groups[cur]||{stops:[]};
         detailEl.querySelector("#stops").innerHTML=g.stops.map((s,i)=>{
           const end=i===0||i===g.stops.length-1;
