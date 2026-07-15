@@ -1,0 +1,31 @@
+# config.yaml 작성용 예시. 이 파일을 config.yaml 로 복사해서 값을 채우세요.
+#   cp config.example.yaml config.yaml
+#
+# 비밀 값(서비스 키, 액세스 토큰)은 파일 대신 환경변수로 주입하는 것을 권장합니다.
+#   export BUS_API__SERVICE_KEY="..."
+#   export KAKAO__ACCESS_TOKEN="..."
+
+station_id: "123456"       # 인천 정류장 ID
+
+routes:                    # 알림 받을 노선 번호
+  - "17"
+  - "43"
+
+check_interval: 60         # 조회 주기(초)
+notify_minutes: 10         # 도착 n분 이하이면 알림
+notify_stations: 3         # 남은 정류장 n개 이하이면 알림 (null 이면 미사용)
+
+bus_api:
+  base_url: "http://apis.data.go.kr/6280000/busArrivalService"
+  endpoint: "/getAllRouteBusArrivalList"
+  service_key: "YOUR_DATA_GO_KR_SERVICE_KEY"
+  timeout: 10
+  use_mock: false
+
+kakao:
+  access_token: "YOUR_KAKAO_ACCESS_TOKEN"
+  dry_run: false
+
+database_path: "bus_notifier.db"
+dedup_ttl: 1800
+log_level: "INFO"
