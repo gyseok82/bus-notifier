@@ -96,6 +96,13 @@ class Settings(BaseSettings):
     incheon_location_base_url: str = "https://apis.data.go.kr/6280000/busLocationService"
     incheon_route_use_mock: bool = False
 
+    # 국토부 TAGO 버스위치정보(실시간 GPS). 인천 위치서비스는 정류소 스냅뿐이라
+    # 위경도를 TAGO 로 보완한다. routeId = ICB + 인천 ROUTEID, cityCode 23=인천.
+    tago_location_base_url: str = "https://apis.data.go.kr/1613000/BusLcInfoInqireService"
+    tago_city_code: str = "23"
+    tago_route_prefix: str = "ICB"
+    tago_enabled: bool = True
+
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)
 
     database_path: str = "bus_notifier.db"

@@ -38,6 +38,10 @@ class IncheonRouteService:
         location_base_url: str = "https://apis.data.go.kr/6280000/busLocationService",
         use_mock: bool = False,
         timeout: float = 10.0,
+        tago_base_url: str = "https://apis.data.go.kr/1613000/BusLcInfoInqireService",
+        tago_city_code: str = "23",
+        tago_route_prefix: str = "ICB",
+        tago_enabled: bool = True,
     ) -> None:
         self._key = service_key
         self._base = base_url.rstrip("/")
@@ -45,6 +49,11 @@ class IncheonRouteService:
         self._client = client
         self._use_mock = use_mock
         self._timeout = timeout
+        # 국토부 TAGO 실시간 GPS(위경도) 보완. 인천 위치서비스는 정류소 스냅만 제공.
+        self._tago_base = tago_base_url.rstrip("/")
+        self._tago_city = tago_city_code
+        self._tago_prefix = tago_route_prefix
+        self._tago_enabled = tago_enabled
 
     async def search(self, route_no: str) -> list[dict]:
         """노선번호(부분일치)로 검색. ROUTEID/기점/종점 등을 반환."""
@@ -82,7 +91,42 @@ class IncheonRouteService:
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise BusApiError(f"버스 위치 조회({route_id}) 실패: {exc}") from exc
-        return {"route_id": route_id, "buses": parse_bus_locations_xml(resp.text)}
+        buses = parse_bus_locations_xml(resp.text)
+        # 인천 위치서비스는 여석/혼잡도/정류소를 주지만 좌표(위경도)는 없다.
+        # TAGO 실시간 GPS 를 차량번호(plate)로 병합해 지도에 실좌표를 얹는다.
+        if self._tago_enabled and buses:
+            await self._merge_tago_positions(route_id, buses)
+        return {"route_id": route_id, "buses": buses}
+
+    async def _merge_tago_positions(self, route_id: str, buses: list[dict]) -> None:
+        """TAGO 위경도를 차량번호로 병합. 실패 시 조용히 스킵(정류소 스냅으로 폴백)."""
+        url = self._tago_base + "/getRouteAcctoBusLcList"
+        params = {
+            "serviceKey": self._key,
+            "cityCode": self._tago_city,
+            "routeId": self._tago_prefix + route_id,
+            "numOfRows": "200",
+            "pageNo": "1",
+            "_type": "json",
+        }
+        try:
+            resp = await self._client.get(url, params=params, timeout=self._timeout)
+            resp.raise_for_status()
+            positions = parse_tago_positions(resp.json())
+        except (httpx.HTTPError, ValueError) as exc:  # ValueError = JSON 파싱 실패
+            logger.debug("TAGO GPS 조회({}) 생략: {}", route_id, exc)
+            return
+        logger.debug("TAGO GPS({}) {}대 좌표 병합", route_id, len(positions))
+        if not positions:
+            return
+        by_tail: dict[str, tuple[float, float]] = {}
+        for plate, pos in positions.items():
+            by_tail.setdefault(_plate_tail(plate), pos)
+        for b in buses:
+            plate = str(b.get("plate", "")).replace(" ", "")
+            pos = positions.get(plate) or by_tail.get(_plate_tail(plate))
+            if pos:
+                b["lat"], b["lng"] = pos[0], pos[1]
 
     async def _get(self, path: str, params: dict, what: str) -> str:
         url = self._base + path
@@ -141,6 +185,38 @@ def parse_route_stops_xml(xml_text: str) -> list[dict]:
         )
     stops.sort(key=lambda s: s["seq"])
     return stops
+
+
+def parse_tago_positions(data: dict) -> dict[str, tuple[float, float]]:
+    """TAGO getRouteAcctoBusLcList(JSON) → {차량번호: (lat, lng)}. 실좌표만 담는다."""
+    out: dict[str, tuple[float, float]] = {}
+    try:
+        items = data["response"]["body"]["items"]
+    except (KeyError, TypeError):
+        return out
+    if not items:  # 운행 없음이면 items 는 "" 로 온다
+        return out
+    rows = items.get("item") if isinstance(items, dict) else None
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not isinstance(rows, list):
+        return out
+    for d in rows:
+        plate = str(d.get("vehicleno", "")).replace(" ", "")
+        lat, lng = d.get("gpslati"), d.get("gpslong")
+        if not plate or lat is None or lng is None:
+            continue
+        try:
+            out[plate] = (float(lat), float(lng))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _plate_tail(plate: str) -> str:
+    """차량번호에서 끝 4자리 숫자(노선 내 식별용)."""
+    digits = "".join(ch for ch in str(plate) if ch.isdigit())
+    return digits[-4:]
 
 
 def parse_bus_locations_xml(xml_text: str) -> list[dict]:
