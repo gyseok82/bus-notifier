@@ -32,3 +32,12 @@ kakao:
 database_path: "bus_notifier.db"
 dedup_ttl: 1800
 log_level: "INFO"
+
+# 상세화면 지도의 실시간 버스 위치는 국토부 TAGO 버스위치정보(gpslati/gpslong)를
+# 사용합니다. 위 data.go.kr 인증키(계정 단위 공용)로 아래 두 서비스를 활용신청하세요.
+#   - 국토교통부_(TAGO)_버스위치정보 (data 15098533, BusLcInfoInqireService)
+#   - 국토교통부_(TAGO)_버스노선정보 (data 15098529, BusRouteInfoInqireService)
+# 미승인/장애 시 자동으로 정류소 좌표(스냅) 표시로 폴백합니다.
+# tago_enabled: true       # false 로 두면 TAGO 조회를 끄고 정류소 스냅만 사용
+# tago_city_code: "23"     # 인천
+# tago_route_prefix: "ICB" # TAGO 인천 routeId = ICB + 인천 ROUTEID

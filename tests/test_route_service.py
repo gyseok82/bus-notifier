@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from app.services.route_service import (
+    _plate_tail,
     parse_bus_locations_xml,
     parse_route_search_xml,
     parse_route_stops_xml,
+    parse_tago_positions,
 )
 
 _BUSES_XML = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -85,3 +87,27 @@ def test_parse_bus_locations():
     # REMAIND_SEAT=255 는 정보없음 → None
     assert buses[1]["seat"] is None
     assert buses[1]["low_floor"] is True
+
+
+def test_parse_tago_positions():
+    data = {
+        "response": {"body": {"items": {"item": [
+            {"vehicleno": "인천73아1664", "gpslati": 37.4, "gpslong": 126.7, "nodenm": "A"},
+            {"vehicleno": "인천73아1680", "gpslati": None, "gpslong": 126.9},  # 좌표 없음 → 제외
+        ]}}}
+    }
+    pos = parse_tago_positions(data)
+    assert pos == {"인천73아1664": (37.4, 126.7)}
+
+
+def test_parse_tago_positions_edge_cases():
+    # 운행 없음(items="") / 단일 item(dict) / 깨진 응답 모두 안전하게 처리
+    assert parse_tago_positions({"response": {"body": {"items": ""}}}) == {}
+    single = {"response": {"body": {"items": {"item": {"vehicleno": "인천70바1", "gpslati": 37.5, "gpslong": 127.0}}}}}
+    assert parse_tago_positions(single) == {"인천70바1": (37.5, 127.0)}
+    assert parse_tago_positions({"nope": 1}) == {}
+
+
+def test_plate_tail():
+    assert _plate_tail("인천73아1664") == "1664"
+    assert _plate_tail("인천70바6116") == "6116"

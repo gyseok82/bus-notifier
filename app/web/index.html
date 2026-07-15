@@ -324,6 +324,8 @@
         tabsEl.querySelectorAll(".dirtab").forEach(x=>x.setAttribute("aria-selected",+x.dataset.i===cur)); paint()});
 
       function coordOf(dir,bus){
+        // TAGO 실시간 GPS(위경도)가 있으면 우선, 없으면 정류소 좌표로 폴백
+        if(bus.lat!=null&&bus.lng!=null) return [bus.lat,bus.lng];
         const g=groups.find(x=>x.dir===dir)||groups[cur]||{stops:[]};
         let st=bus.stop_id&&g.stops.find(s=>s.id===bus.stop_id);
         if(!st) st=g.stops.find(s=>s.seq===bus.stop_seq);

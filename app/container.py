@@ -56,6 +56,10 @@ class Container:
             client,
             location_base_url=settings.incheon_location_base_url,
             use_mock=settings.incheon_route_use_mock,
+            tago_base_url=settings.tago_location_base_url,
+            tago_city_code=settings.tago_city_code,
+            tago_route_prefix=settings.tago_route_prefix,
+            tago_enabled=settings.tago_enabled,
         )
         scheduler = BusScheduler(notify_service, settings.check_interval)
 
