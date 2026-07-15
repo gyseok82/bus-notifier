@@ -25,6 +25,9 @@ bus_api:
 kakao:
   access_token: "YOUR_KAKAO_ACCESS_TOKEN"
   dry_run: false
+  # 카카오맵 JavaScript 키(지도용). 비우면 지도는 Leaflet+OSM 으로 폴백.
+  # 카카오 개발자 콘솔 > 앱 키 > JavaScript 키. [플랫폼 > Web]에 http://localhost:8010 등록 필수.
+  js_key: "YOUR_KAKAO_JS_KEY"
 
 database_path: "bus_notifier.db"
 dedup_ttl: 1800

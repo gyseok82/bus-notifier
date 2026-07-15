@@ -27,11 +27,13 @@ class ApiSettings(BaseModel):
 
 
 class KakaoSettings(BaseModel):
-    """카카오톡 '나에게 보내기' 설정."""
+    """카카오톡 '나에게 보내기' + 카카오맵 설정."""
 
     access_token: str = ""
     # None 이면 access_token 유무로 자동 판단, True/False 로 강제 지정 가능
     dry_run: bool | None = None
+    # 카카오맵 JavaScript 키(지도 표시용). 비어 있으면 지도는 Leaflet+OSM 으로 폴백.
+    js_key: str = ""
 
     @property
     def is_dry_run(self) -> bool:

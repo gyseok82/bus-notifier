@@ -24,9 +24,15 @@ def get_container(request: Request) -> Container:
 
 
 @router.get("/", response_class=HTMLResponse, include_in_schema=False)
-async def index() -> str:
-    """노선 검색 + 노선도 화면."""
-    return _INDEX_HTML
+async def index(container: Container = Depends(get_container)) -> str:
+    """노선 검색 + 노선도 화면. 카카오맵 키가 있으면 SDK 를 주입한다."""
+    key = container.settings.kakao.js_key or ""
+    sdk = (
+        f'<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={key}&autoload=false"></script>'
+        if key
+        else ""
+    )
+    return _INDEX_HTML.replace("__KAKAO_SDK__", sdk)
 
 
 @router.get("/api/routes")
