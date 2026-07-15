@@ -340,14 +340,24 @@
       // 정류소를 앵커로, 각 구간(정류소 seq→다음)에 누적된 실시간 GPS 자취를
       // 끼워넣어 도로를 따라가는 경로점 배열을 만든다. 자취 없는 구간은 직선 폴백.
       function seg2(a,b){const dx=a[0]-b[0],dy=a[1]-b[1];return dx*dx+dy*dy;}
+      // 정류소 i↔i+1 을 감싼 박스(도로 곡선 여유 포함) 밖의 점은 GPS 튐으로 보고 제외.
+      function inCorridor(p,a,b){
+        const padLat=Math.max(Math.abs(a[0]-b[0])*0.5,0.004);
+        const padLng=Math.max(Math.abs(a[1]-b[1])*0.5,0.004);
+        return p[0]>=Math.min(a[0],b[0])-padLat && p[0]<=Math.max(a[0],b[0])+padLat
+            && p[1]>=Math.min(a[1],b[1])-padLng && p[1]<=Math.max(a[1],b[1])+padLng;
+      }
       function pathFor(g){
         const tr=track[g.dir]||{}, pts=[];
-        g.stops.forEach(s=>{
+        g.stops.forEach((s,idx)=>{
           if(s.lat==null) return;
           const anchor=[s.lat,s.lng]; pts.push(anchor);
-          const bucket=tr[s.seq];
-          if(bucket&&bucket.length)
+          let bucket=tr[s.seq];
+          if(bucket&&bucket.length){
+            const nx=g.stops[idx+1];
+            if(nx&&nx.lat!=null) bucket=bucket.filter(p=>inCorridor(p,anchor,[nx.lat,nx.lng]));
             bucket.slice().sort((a,b)=>seg2(a,anchor)-seg2(b,anchor)).forEach(p=>pts.push([p[0],p[1]]));
+          }
         });
         return pts;
       }

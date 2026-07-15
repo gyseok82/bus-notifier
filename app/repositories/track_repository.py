@@ -32,9 +32,17 @@ class RouteTrackRepository:
                 gy       INTEGER NOT NULL,
                 lat      REAL    NOT NULL,
                 lng      REAL    NOT NULL,
+                hits     INTEGER NOT NULL DEFAULT 1,
                 PRIMARY KEY (route_id, dir, gx, gy)
             )
             """)
+        # 구버전 테이블 마이그레이션: hits 컬럼이 없으면 추가.
+        async with self._db.execute("PRAGMA table_info(route_track)") as cur:
+            cols = [row[1] for row in await cur.fetchall()]
+        if "hits" not in cols:
+            await self._db.execute(
+                "ALTER TABLE route_track ADD COLUMN hits INTEGER NOT NULL DEFAULT 1"
+            )
         await self._db.execute(
             "CREATE INDEX IF NOT EXISTS idx_track_route ON route_track (route_id, dir, seq)"
         )
@@ -52,7 +60,10 @@ class RouteTrackRepository:
         return self._db
 
     async def record(self, route_id: str, buses: list[dict]) -> int:
-        """버스들의 실시간 GPS 점을 누적한다. 저장(신규) 개수를 반환."""
+        """버스들의 실시간 GPS 점을 누적한다. 같은 격자면 관측 횟수(hits)만 +1.
+
+        처리한 점(행) 개수를 반환한다.
+        """
         rows: list[tuple] = []
         for b in buses:
             lat, lng = b.get("lat"), b.get("lng")
@@ -65,20 +76,27 @@ class RouteTrackRepository:
             )
         if not rows:
             return 0
-        cur = await self._conn().executemany(
-            "INSERT OR IGNORE INTO route_track "
-            "(route_id, dir, seq, gx, gy, lat, lng) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        # 반복 관측되는 격자(실제 도로)는 hits 가 쌓이고, 일회성 GPS 오차는 낮게 남는다.
+        await self._conn().executemany(
+            "INSERT INTO route_track (route_id, dir, seq, gx, gy, lat, lng) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(route_id, dir, gx, gy) DO UPDATE SET hits = hits + 1",
             rows,
         )
         await self._conn().commit()
-        return cur.rowcount or 0
+        return len(rows)
 
-    async def track(self, route_id: str) -> dict[str, dict[str, list[list[float]]]]:
-        """누적 경로를 {방향: {정류소순번: [[lat, lng], ...]}} 로 반환."""
+    async def track(
+        self, route_id: str, min_hits: int = 1
+    ) -> dict[str, dict[str, list[list[float]]]]:
+        """누적 경로를 {방향: {정류소순번: [[lat, lng], ...]}} 로 반환.
+
+        min_hits 이상 관측된 점만 포함해 일회성 GPS 오차(글리치)를 걸러낸다.
+        """
         out: dict[str, dict[str, list[list[float]]]] = {}
         async with self._conn().execute(
-            "SELECT dir, seq, lat, lng FROM route_track WHERE route_id = ?",
-            (route_id,),
+            "SELECT dir, seq, lat, lng FROM route_track WHERE route_id = ? AND hits >= ?",
+            (route_id, min_hits),
         ) as cur:
             async for dir_, seq, lat, lng in cur:
                 out.setdefault(str(dir_), {}).setdefault(str(seq), []).append([lat, lng])
