@@ -70,6 +70,14 @@ async def route_buses(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.get("/api/routes/{route_id}/track")
+async def route_track(
+    route_id: str, container: Container = Depends(get_container)
+) -> dict:
+    """실시간 GPS 누적으로 학습한 도로 경로({방향:{정류소순번:[[lat,lng]...]}})."""
+    return await container.route_service.track(route_id)
+
+
 class ConfigUpdate(BaseModel):
     """런타임 설정 변경 요청. 지정한 필드만 반영된다."""
 

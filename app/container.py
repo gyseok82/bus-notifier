@@ -6,6 +6,7 @@ import httpx
 
 from app.config.settings import Settings, load_settings
 from app.repositories.dedup_repository import DedupRepository
+from app.repositories.track_repository import RouteTrackRepository
 from app.services.bus_service import BusProvider, build_providers
 from app.services.kakao_service import KakaoService
 from app.services.notify_service import NotifyService
@@ -21,6 +22,7 @@ class Container:
         settings: Settings,
         client: httpx.AsyncClient,
         dedup_repo: DedupRepository,
+        track_repo: RouteTrackRepository,
         providers: dict[str, BusProvider],
         kakao_service: KakaoService,
         notify_service: NotifyService,
@@ -30,6 +32,7 @@ class Container:
         self.settings = settings
         self.client = client
         self.dedup_repo = dedup_repo
+        self.track_repo = track_repo
         self.providers = providers
         self.kakao_service = kakao_service
         self.notify_service = notify_service
@@ -46,6 +49,8 @@ class Container:
         )
         dedup_repo = DedupRepository(settings.database_path, settings.dedup_ttl)
         await dedup_repo.init()
+        track_repo = RouteTrackRepository(settings.database_path)
+        await track_repo.init()
 
         providers = build_providers(settings, client)
         kakao_service = KakaoService(settings.kakao, client)
@@ -60,6 +65,7 @@ class Container:
             tago_city_code=settings.tago_city_code,
             tago_route_prefix=settings.tago_route_prefix,
             tago_enabled=settings.tago_enabled,
+            track_repo=track_repo,
         )
         scheduler = BusScheduler(notify_service, settings.check_interval)
 
@@ -67,6 +73,7 @@ class Container:
             settings=settings,
             client=client,
             dedup_repo=dedup_repo,
+            track_repo=track_repo,
             providers=providers,
             kakao_service=kakao_service,
             notify_service=notify_service,
@@ -77,4 +84,5 @@ class Container:
     async def aclose(self) -> None:
         self.scheduler.shutdown()
         await self.dedup_repo.close()
+        await self.track_repo.close()
         await self.client.aclose()

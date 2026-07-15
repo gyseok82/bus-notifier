@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 from loguru import logger
 
+from app.repositories.track_repository import RouteTrackRepository
 from app.services.bus_service import BusApiError, _parse_root, _to_int
 
 # 인천 버스 API 의 POSX/POSY 는 EPSG:5181(중부원점, 카카오/다음 좌표계) 투영좌표.
@@ -42,6 +43,7 @@ class IncheonRouteService:
         tago_city_code: str = "23",
         tago_route_prefix: str = "ICB",
         tago_enabled: bool = True,
+        track_repo: RouteTrackRepository | None = None,
     ) -> None:
         self._key = service_key
         self._base = base_url.rstrip("/")
@@ -54,6 +56,8 @@ class IncheonRouteService:
         self._tago_city = tago_city_code
         self._tago_prefix = tago_route_prefix
         self._tago_enabled = tago_enabled
+        # 실시간 GPS 자취를 쌓아 도로 경로(노선도)를 학습하는 저장소(선택).
+        self._track_repo = track_repo
 
     async def search(self, route_no: str) -> list[dict]:
         """노선번호(부분일치)로 검색. ROUTEID/기점/종점 등을 반환."""
@@ -96,7 +100,19 @@ class IncheonRouteService:
         # TAGO 실시간 GPS 를 차량번호(plate)로 병합해 지도에 실좌표를 얹는다.
         if self._tago_enabled and buses:
             await self._merge_tago_positions(route_id, buses)
+        # 실좌표가 붙은 버스 자취를 누적해 도로 경로를 학습한다(실패해도 조용히 무시).
+        if self._track_repo is not None:
+            try:
+                await self._track_repo.record(route_id, buses)
+            except Exception as exc:  # noqa: BLE001 - 학습 실패가 조회를 막지 않도록
+                logger.debug("경로 자취 저장({}) 실패: {}", route_id, exc)
         return {"route_id": route_id, "buses": buses}
+
+    async def track(self, route_id: str) -> dict:
+        """누적된 실시간 GPS 자취(도로 경로 학습 결과)를 반환한다."""
+        if self._track_repo is None:
+            return {"route_id": route_id, "track": {}}
+        return {"route_id": route_id, "track": await self._track_repo.track(route_id)}
 
     async def _merge_tago_positions(self, route_id: str, buses: list[dict]) -> None:
         """TAGO 위경도를 차량번호로 병합. 실패 시 조용히 스킵(정류소 스냅으로 폴백)."""
