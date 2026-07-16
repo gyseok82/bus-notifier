@@ -153,6 +153,50 @@
       box-shadow:0 0 0 2px #fff, 0 1px 3px rgba(10,15,30,.28)}
     .stop.moving .nm{padding:3px 0; display:flex; align-items:center; gap:6px}
     .stop.moving .movehint{font-size:10.5px; color:var(--muted); font-weight:600}
+    /* 알림 있는 정류소 표시 + 클릭 가능 */
+    .stop .nm{cursor:pointer}
+    .stop.moving .nm{cursor:default}
+    .alarmbell{margin-left:6px; font-size:12px}
+    .stop .nm:hover .addbell{opacity:1}
+    .addbell{opacity:0; margin-left:6px; font-size:11px; color:var(--accent); transition:.15s}
+
+    /* 알림 설정 모달 */
+    .modal{position:fixed; inset:0; z-index:50; display:flex; align-items:flex-end;
+      justify-content:center; background:rgba(10,15,30,.45); padding:0}
+    .modal[hidden]{display:none}
+    .modal-card{background:#fff; width:100%; max-width:440px; border-radius:18px 18px 0 0;
+      padding:18px 18px calc(18px + env(safe-area-inset-bottom)); box-shadow:0 -8px 40px rgba(10,15,30,.3);
+      max-height:88vh; overflow-y:auto; animation:sheetUp .22s ease}
+    @keyframes sheetUp{from{transform:translateY(24px); opacity:.6}to{transform:none; opacity:1}}
+    @media(min-width:520px){.modal{align-items:center} .modal-card{border-radius:18px}}
+    .modal-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:12px}
+    .modal-kicker{font-size:11.5px; color:var(--accent); font-weight:700}
+    .modal-title{font-size:17px; font-weight:800; margin-top:2px}
+    .modal-x{border:none; background:#F0F3F9; width:30px; height:30px; border-radius:9px; cursor:pointer; font-size:13px}
+    .am-existing{display:flex; flex-direction:column; gap:6px; margin-bottom:12px}
+    .am-existing:empty{display:none}
+    .am-chip{display:flex; align-items:center; justify-content:space-between; gap:8px;
+      background:#F5F8FD; border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:12.5px}
+    .am-chip-btns{display:flex; gap:4px; flex-shrink:0}
+    .am-chip .test{border:1px solid var(--accent); background:#fff; color:var(--accent); cursor:pointer;
+      font-size:11.5px; font-weight:700; border-radius:7px; padding:4px 8px}
+    .am-chip .test:disabled{opacity:.5}
+    .am-chip .del{border:none; background:none; color:#E23D28; cursor:pointer; font-size:12px; font-weight:700}
+    .am-form{display:flex; flex-direction:column; gap:12px}
+    .am-row{display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600}
+    .am-row em{color:var(--muted); font-weight:500; font-style:normal}
+    .am-row input[type=number], .am-row input[type=time]{border:1px solid var(--line); border-radius:10px;
+      padding:10px; font-size:15px; font-family:inherit}
+    .am-times{display:flex; align-items:center; gap:8px}
+    .am-times input{flex:1}
+    .am-daychips{display:flex; gap:6px; flex-wrap:wrap}
+    .daychip{border:1px solid var(--line); background:#fff; border-radius:9px; padding:8px 0; width:38px;
+      text-align:center; font-size:13px; font-weight:700; cursor:pointer; user-select:none}
+    .daychip[aria-pressed=true]{background:var(--accent); color:#fff; border-color:var(--accent)}
+    .modal-actions{display:flex; gap:10px; margin-top:16px}
+    .modal-actions button{flex:1; padding:13px; border-radius:11px; font-size:14px; font-weight:700; cursor:pointer}
+    .btn-ghost{border:1px solid var(--line); background:#fff; color:var(--ink)}
+    .btn-primary{border:none; background:var(--accent); color:#fff}
 
     .toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%) translateY(8px);
       background:var(--ink); color:#fff; padding:11px 18px; border-radius:11px; font-size:13.5px;
@@ -194,6 +238,31 @@
       <div id="detail"></div>
     </main>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  </div>
+
+  <div id="alarmModal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="amTitle">
+      <div class="modal-head">
+        <div><div class="modal-kicker">🔔 도착 알림 설정</div>
+          <div id="amTitle" class="modal-title"></div></div>
+        <button class="modal-x" id="amClose" aria-label="닫기">✕</button>
+      </div>
+      <div id="amExisting" class="am-existing"></div>
+      <div class="am-form">
+        <label class="am-row"><span>몇 정거장 전</span>
+          <input id="amN" type="number" min="1" max="30" inputmode="numeric" placeholder="예: 3"></label>
+        <label class="am-row"><span>도착 N분 전 <em>(선택)</em></span>
+          <input id="amMin" type="number" min="1" max="60" inputmode="numeric" placeholder="예: 5"></label>
+        <div class="am-row"><span>시간대 <em>(선택)</em></span>
+          <div class="am-times"><input id="amStart" type="time"> <b>~</b> <input id="amEnd" type="time"></div></div>
+        <div class="am-row am-days"><span>요일 <em>(비우면 매일)</em></span>
+          <div id="amDays" class="am-daychips"></div></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="amCancel">취소</button>
+        <button class="btn-primary" id="amSave">알림 추가</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -279,20 +348,22 @@
       const t=typeOf(r.tp);
       metaEl.hidden=true; listEl.innerHTML=""; filtersEl.hidden=true;
       showState('<div class="spinner"></div><p>노선도 불러오는 중…</p>');
-      let stops, track={};
+      let stops, track={}, alarms=[];
       try{
-        const [rs,rt]=await Promise.all([
+        const [rs,rt,ra]=await Promise.all([
           fetch("/api/routes/"+encodeURIComponent(r.id)+"/stops"),
           fetch("/api/routes/"+encodeURIComponent(r.id)+"/track").catch(()=>null),
+          fetch("/api/alarms?route_id="+encodeURIComponent(r.id)).catch(()=>null),
         ]);
         if(!rs.ok) throw new Error("노선도 실패 ("+rs.status+")");
         stops=(await rs.json()).stops||[];
         if(rt&&rt.ok) track=(await rt.json()).track||{};
+        if(ra&&ra.ok) alarms=(await ra.json())||[];
       }catch(e){ showState('<h3>노선도를 불러오지 못했어요</h3><p>'+esc(e.message)+'</p>'+
         '<div class="hintchips"><button id="bk">← 목록으로</button></div>');
         $("#bk").onclick=()=>renderList(); return }
       showState("");
-      renderDetail(r,t,stops,track);
+      renderDetail(r,t,stops,track,alarms);
     }
 
     function dirGroups(stops){
@@ -302,10 +373,35 @@
       return Object.keys(g).sort().map(k=>({dir:k,stops:g[k]}));
     }
 
-    function renderDetail(r,t,stops,track){
+    function renderDetail(r,t,stops,track,alarms){
       const groups=dirGroups(stops);
       let cur=0, buses=[], busLayer=null, kmap=null, kbusOverlays=[], trackTick=0, trackCount=0;
-      track=track||{};
+      track=track||{}; alarms=alarms||[];
+      const alarmsForStop=id=>alarms.filter(a=>a.stop_id===id);
+      async function refreshAlarms(){
+        try{ const res=await fetch("/api/alarms?route_id="+encodeURIComponent(r.id));
+          if(res.ok) alarms=(await res.json())||[]; }catch(e){}
+        paintBells();
+      }
+      function paintBells(){
+        const stopsEl=detailEl.querySelector("#stops"); if(!stopsEl) return;
+        const cs=(groups[cur]||{stops:[]}).stops;
+        stopsEl.querySelectorAll("li.stop:not(.moving)").forEach(li=>{
+          const s=cs[+li.dataset.i]; if(!s) return;
+          const nm=li.querySelector(".nm"); if(!nm) return;
+          let bell=nm.querySelector(".alarmbell");
+          const has=alarmsForStop(s.id).length>0;
+          if(has&&!bell){ bell=document.createElement("span"); bell.className="alarmbell"; bell.textContent="🔔"; nm.appendChild(bell); }
+          else if(!has&&bell) bell.remove();
+        });
+      }
+      function openStopAlarm(s){
+        AlarmModal.open({
+          routeId:r.id, routeNo:r.no, stop:s,
+          existing:()=>alarmsForStop(s.id),
+          onChanged:refreshAlarms,
+        });
+      }
 
       detailEl.innerHTML=
         '<div class="detail">'
@@ -523,14 +619,22 @@
         buildMap();
         trackCount=countTrack(track);
         const g=groups[cur]||{stops:[]};
-        detailEl.querySelector("#stops").innerHTML=g.stops.map((s,i)=>{
+        const stopsEl=detailEl.querySelector("#stops");
+        stopsEl.innerHTML=g.stops.map((s,i)=>{
           const end=i===0||i===g.stops.length-1;
-          return '<li class="stop'+(end?' end':'')+'" style="--railcol:'+t.color+'">'
+          return '<li class="stop'+(end?' end':'')+'" data-i="'+i+'" style="--railcol:'+t.color+'">'
             +'<span class="rail"><span class="dot"></span></span>'
             +'<span class="nm">'+esc(s.name)+(i===0?' <span class="admin">· 기점</span>':i===g.stops.length-1?' <span class="admin">· 종점</span>':'')
-            +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')+'<span class="atbus"></span></span>'
+            +(s.admin?' <span class="admin">'+esc(s.admin)+'</span>':'')
+            +'<span class="addbell">＋🔔</span><span class="atbus"></span></span>'
             +'<span class="seq">'+(i+1)+'</span></li>';
         }).join("");
+        // 정류소 이름 클릭 → 알림 설정 팝업(이동 중 행 제외)
+        stopsEl.onclick=e=>{
+          const li=e.target.closest("li.stop"); if(!li||li.classList.contains("moving")) return;
+          const s=(groups[cur]||{stops:[]}).stops[+li.dataset.i]; if(s) openStopAlarm(s);
+        };
+        paintBells();
         updateBusesUI();
       }
 
@@ -550,6 +654,65 @@
     function toast(m){const el=$("#toast"); el.textContent=m; el.hidden=false;
       requestAnimationFrame(()=>el.classList.add("show"));
       clearTimeout(tt); tt=setTimeout(()=>{el.classList.remove("show"); setTimeout(()=>el.hidden=true,200)},1600)}
+
+    // 도착 알림 설정 모달 컨트롤러
+    const AlarmModal=(()=>{
+      const DAYS=["월","화","수","목","금","토","일"];  // 인덱스 0~6 = 월~일
+      const el=$("#alarmModal"), title=$("#amTitle"), daysEl=$("#amDays"), exEl=$("#amExisting");
+      const nEl=$("#amN"), minEl=$("#amMin"), sEl=$("#amStart"), eEl=$("#amEnd");
+      let ctx=null;
+      daysEl.innerHTML=DAYS.map((d,i)=>'<button type="button" class="daychip" data-d="'+i+'" aria-pressed="false">'+d+'</button>').join("");
+      daysEl.onclick=e=>{const b=e.target.closest(".daychip"); if(!b)return;
+        b.setAttribute("aria-pressed", b.getAttribute("aria-pressed")!=="true");};
+      const selectedDays=()=>[...daysEl.querySelectorAll('.daychip[aria-pressed=true]')].map(b=>+b.dataset.d);
+      function close(){ el.hidden=true; ctx=null; }
+      function renderExisting(){
+        const list=ctx.existing();
+        exEl.innerHTML=list.map(a=>{
+          const cond=[a.n_stations!=null?a.n_stations+"정거장 전":null, a.notify_minutes!=null?a.notify_minutes+"분 전":null].filter(Boolean).join(" · ");
+          const when=[(a.start_time&&a.end_time)?a.start_time+"~"+a.end_time:"상시",
+            a.weekdays&&a.weekdays.length?a.weekdays.map(d=>DAYS[d]).join(""):"매일"].join(" / ");
+          return '<div class="am-chip"><span>🔔 '+esc(cond||"조건없음")+' <b>('+esc(when)+')</b></span>'
+            +'<span class="am-chip-btns"><button class="test" data-id="'+a.id+'">테스트</button>'
+            +'<button class="del" data-id="'+a.id+'">삭제</button></span></div>';
+        }).join("");
+        exEl.querySelectorAll(".del").forEach(b=>b.onclick=async()=>{
+          await fetch("/api/alarms/"+b.dataset.id,{method:"DELETE"});
+          await ctx.onChanged(); renderExisting(); toast("알림을 삭제했어요");
+        });
+        exEl.querySelectorAll(".test").forEach(b=>b.onclick=async()=>{
+          const orig=b.textContent; b.disabled=true; b.textContent="발송 중…";
+          try{
+            const res=await fetch("/api/alarms/"+b.dataset.id+"/test",{method:"POST"});
+            const d=await res.json().catch(()=>({}));
+            if(!res.ok) toast("테스트 실패 ("+res.status+")");
+            else if(d.dry_run) toast("dry-run 모드예요 — 실제 발송 안 됨");
+            else if(d.sent) toast(d.matched?"조건 맞는 버스로 발송! 카톡 확인 🔔":"미리보기 발송됨! 카톡 확인 🔔");
+            else toast("발송 실패: "+(d.error||"알 수 없음"));
+          }catch(e){ toast("테스트 중 오류"); }
+          b.disabled=false; b.textContent=orig;
+        });
+      }
+      async function save(){
+        const n=nEl.value?parseInt(nEl.value,10):null, m=minEl.value?parseInt(minEl.value,10):null;
+        if(n==null&&m==null){ toast("몇 정거장 전 또는 도착 N분 전을 입력하세요"); return; }
+        const body={route_id:ctx.routeId, route_no:ctx.routeNo, stop_id:ctx.stop.id,
+          stop_name:ctx.stop.name, dir:ctx.stop.dir||"", n_stations:n, notify_minutes:m,
+          start_time:sEl.value||null, end_time:eEl.value||null, weekdays:selectedDays()};
+        const res=await fetch("/api/alarms",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        if(!res.ok){ toast("저장 실패 ("+res.status+")"); return; }
+        await ctx.onChanged(); renderExisting();
+        nEl.value=""; minEl.value=""; toast("알림을 추가했어요 🔔");
+      }
+      $("#amClose").onclick=close; $("#amCancel").onclick=close; $("#amSave").onclick=save;
+      el.onclick=e=>{ if(e.target===el) close(); };
+      return { open(c){ ctx=c;
+        title.textContent=(c.routeNo?c.routeNo+"번 · ":"")+c.stop.name;
+        nEl.value=""; minEl.value=""; sEl.value=""; eEl.value="";
+        daysEl.querySelectorAll(".daychip").forEach(b=>b.setAttribute("aria-pressed","false"));
+        renderExisting(); el.hidden=false; nEl.focus();
+      }};
+    })();
 
     qEl.addEventListener("input",e=>debounce(e.target.value));
     clearEl.onclick=()=>{qEl.value=""; run(""); qEl.focus()};

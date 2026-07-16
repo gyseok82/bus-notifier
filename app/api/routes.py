@@ -78,6 +78,78 @@ async def route_track(
     return await container.route_service.track(route_id)
 
 
+class AlarmCreate(BaseModel):
+    """화면에서 정류장 선택 후 만드는 알림 규칙."""
+
+    route_id: str
+    route_no: str = ""
+    stop_id: str
+    stop_name: str = ""
+    dir: str = ""
+    n_stations: int | None = None
+    notify_minutes: int | None = None
+    start_time: str | None = None  # "HH:MM"
+    end_time: str | None = None
+    weekdays: list[int] = []  # 월=0 ~ 일=6, 비우면 매일
+    enabled: bool = True
+
+
+@router.get("/api/alarms")
+async def list_alarms(
+    route_id: str | None = None, container: Container = Depends(get_container)
+) -> list[dict]:
+    """알림 규칙 목록(옵션: route_id 로 필터)."""
+    return await container.alarm_repo.list(route_id)
+
+
+@router.post("/api/alarms")
+async def create_alarm(
+    body: AlarmCreate, container: Container = Depends(get_container)
+) -> dict:
+    """알림 규칙 생성. n_stations/notify_minutes 중 최소 하나는 있어야 한다."""
+    if body.n_stations is None and body.notify_minutes is None:
+        raise HTTPException(
+            status_code=400, detail="몇 정거장 전 또는 도착 N분 전 중 하나는 필요합니다."
+        )
+    rule = body.model_dump()
+    rule["weekdays"] = ",".join(str(d) for d in sorted(set(body.weekdays)))
+    return await container.alarm_repo.add(rule)
+
+
+@router.delete("/api/alarms/{alarm_id}")
+async def delete_alarm(
+    alarm_id: int, container: Container = Depends(get_container)
+) -> dict:
+    ok = await container.alarm_repo.delete(alarm_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="알림 규칙을 찾을 수 없습니다.")
+    return {"deleted": alarm_id}
+
+
+@router.patch("/api/alarms/{alarm_id}")
+async def toggle_alarm(
+    alarm_id: int, enabled: bool, container: Container = Depends(get_container)
+) -> dict:
+    ok = await container.alarm_repo.set_enabled(alarm_id, enabled)
+    if not ok:
+        raise HTTPException(status_code=404, detail="알림 규칙을 찾을 수 없습니다.")
+    return {"id": alarm_id, "enabled": enabled}
+
+
+@router.post("/api/alarms/{alarm_id}/test")
+async def test_alarm(
+    alarm_id: int, container: Container = Depends(get_container)
+) -> dict:
+    """규칙을 즉시 테스트 발송한다(시간대 무시, 조건 미충족 시 미리보기)."""
+    rule = await container.alarm_repo.get(alarm_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="알림 규칙을 찾을 수 없습니다.")
+    try:
+        return await container.notify_service.test_rule(rule)
+    except BusApiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 class ConfigUpdate(BaseModel):
     """런타임 설정 변경 요청. 지정한 필드만 반영된다."""
 
