@@ -34,6 +34,11 @@ class KakaoSettings(BaseModel):
     dry_run: bool | None = None
     # 카카오맵 JavaScript 키(지도 표시용). 비어 있으면 지도는 Leaflet+OSM 으로 폴백.
     js_key: str = ""
+    # OAuth 자동 갱신용. REST API 키 + refresh_token 으로 access_token 을 재발급한다.
+    rest_api_key: str = ""
+    refresh_token: str = ""
+    # 갱신된 토큰을 저장/로드할 파일(gitignore). config 재작성 없이 회전 토큰을 보관.
+    token_path: str = "kakao_token.json"
 
     @property
     def is_dry_run(self) -> bool:

@@ -20,3 +20,6 @@ config.yaml
 
 # OMC
 .omc/
+
+# Kakao OAuth token (rotating)
+kakao_token.json

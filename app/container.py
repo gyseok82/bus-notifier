@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 
 from app.config.settings import Settings, load_settings
+from app.repositories.alarm_repository import AlarmRepository
 from app.repositories.dedup_repository import DedupRepository
 from app.repositories.track_repository import RouteTrackRepository
 from app.services.bus_service import BusProvider, build_providers
@@ -23,6 +24,7 @@ class Container:
         client: httpx.AsyncClient,
         dedup_repo: DedupRepository,
         track_repo: RouteTrackRepository,
+        alarm_repo: AlarmRepository,
         providers: dict[str, BusProvider],
         kakao_service: KakaoService,
         notify_service: NotifyService,
@@ -33,6 +35,7 @@ class Container:
         self.client = client
         self.dedup_repo = dedup_repo
         self.track_repo = track_repo
+        self.alarm_repo = alarm_repo
         self.providers = providers
         self.kakao_service = kakao_service
         self.notify_service = notify_service
@@ -51,10 +54,14 @@ class Container:
         await dedup_repo.init()
         track_repo = RouteTrackRepository(settings.database_path)
         await track_repo.init()
+        alarm_repo = AlarmRepository(settings.database_path)
+        await alarm_repo.init()
 
         providers = build_providers(settings, client)
         kakao_service = KakaoService(settings.kakao, client)
-        notify_service = NotifyService(settings, providers, kakao_service, dedup_repo)
+        notify_service = NotifyService(
+            settings, providers, kakao_service, dedup_repo, alarm_repo=alarm_repo
+        )
         route_service = IncheonRouteService(
             settings.incheon_api.service_key,
             settings.incheon_route_base_url,
@@ -76,6 +83,7 @@ class Container:
             client=client,
             dedup_repo=dedup_repo,
             track_repo=track_repo,
+            alarm_repo=alarm_repo,
             providers=providers,
             kakao_service=kakao_service,
             notify_service=notify_service,
@@ -87,4 +95,5 @@ class Container:
         self.scheduler.shutdown()
         await self.dedup_repo.close()
         await self.track_repo.close()
+        await self.alarm_repo.close()
         await self.client.aclose()
