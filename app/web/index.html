@@ -689,7 +689,7 @@
             else if(d.dry_run) toast("dry-run 모드예요 — 실제 발송 안 됨");
             else if(d.sent) toast(d.matched?"조건 맞는 버스로 발송! 카톡 확인 🔔":"미리보기 발송됨! 카톡 확인 🔔");
             else toast("발송 실패: "+(d.error||"알 수 없음"));
-          }catch(e){ toast("테스트 중 오류"); }
+          }catch(e){ toast("테스트 중 오류 — 서버 연결 확인 ("+(e&&e.message||e)+")"); }
           b.disabled=false; b.textContent=orig;
         });
       }
