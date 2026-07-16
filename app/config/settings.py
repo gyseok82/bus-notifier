@@ -104,6 +104,9 @@ class Settings(BaseSettings):
     tago_enabled: bool = True
     # 노선도 학습: 이 횟수 이상 관측된 GPS 격자만 경로로 그린다(일회성 오차 제거).
     track_min_hits: int = 2
+    # 버스 위치 캐시 TTL(초). 프론트 폴링과 무관하게 상류 API 호출을 이 간격으로 제한
+    # 해 data.go.kr 일일 할당량을 아낀다. 할당량 초과 시 마지막 캐시로 폴백.
+    buses_cache_ttl: float = 15.0
 
     kakao: KakaoSettings = Field(default_factory=KakaoSettings)
 

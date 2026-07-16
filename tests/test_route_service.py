@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import httpx
+import pytest
+
+from app.services.bus_service import BusApiError
 from app.services.route_service import (
+    IncheonRouteService,
     _plate_tail,
     parse_bus_locations_xml,
     parse_route_search_xml,
@@ -111,3 +116,60 @@ def test_parse_tago_positions_edge_cases():
 def test_plate_tail():
     assert _plate_tail("인천73아1664") == "1664"
     assert _plate_tail("인천70바6116") == "6116"
+
+
+class _FakeResp:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+class _FakeClient:
+    """호출 횟수를 세고, fail_after 호출 이후엔 HTTP 오류를 던지는 가짜 클라이언트."""
+
+    def __init__(self, text: str, fail_after: int | None = None) -> None:
+        self._text = text
+        self.calls = 0
+        self._fail_after = fail_after
+
+    async def get(self, url, params=None, timeout=None):  # noqa: ANN001
+        self.calls += 1
+        if self._fail_after is not None and self.calls > self._fail_after:
+            raise httpx.ConnectError("boom")
+        return _FakeResp(self._text)
+
+
+def _svc(client, ttl: float):
+    return IncheonRouteService(
+        "k", "http://b", client, tago_enabled=False, buses_cache_ttl=ttl
+    )
+
+
+@pytest.mark.asyncio
+async def test_buses_cache_reduces_upstream_calls():
+    client = _FakeClient(_BUSES_XML)
+    svc = _svc(client, ttl=100)
+    r1 = await svc.buses("R1")
+    r2 = await svc.buses("R1")
+    assert client.calls == 1  # 두 번째는 캐시
+    assert r1 == r2 and len(r1["buses"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_buses_falls_back_to_stale_cache_on_error():
+    client = _FakeClient(_BUSES_XML, fail_after=1)  # 1회 성공 후 오류
+    svc = _svc(client, ttl=0)  # 매번 상류 재시도
+    ok = await svc.buses("R1")
+    stale = await svc.buses("R1")  # 재시도 실패 → 마지막 캐시
+    assert stale == ok
+    assert client.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_buses_error_without_cache_raises():
+    client = _FakeClient(_BUSES_XML, fail_after=0)  # 처음부터 오류
+    svc = _svc(client, ttl=0)
+    with pytest.raises(BusApiError):
+        await svc.buses("R1")

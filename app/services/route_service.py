@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import httpx
 from loguru import logger
 
@@ -46,6 +48,7 @@ class IncheonRouteService:
         tago_enabled: bool = True,
         track_repo: RouteTrackRepository | None = None,
         track_min_hits: int = 2,
+        buses_cache_ttl: float = 15.0,
     ) -> None:
         self._key = service_key
         self._base = base_url.rstrip("/")
@@ -61,6 +64,9 @@ class IncheonRouteService:
         # 실시간 GPS 자취를 쌓아 도로 경로(노선도)를 학습하는 저장소(선택).
         self._track_repo = track_repo
         self._track_min_hits = track_min_hits
+        # 버스 위치 캐시: data.go.kr 일일 할당량 보호. {route_id: (monotonic_ts, result)}
+        self._buses_ttl = buses_cache_ttl
+        self._buses_cache: dict[str, tuple[float, dict]] = {}
 
     async def search(self, route_no: str) -> list[dict]:
         """노선번호(부분일치)로 검색. ROUTEID/기점/종점 등을 반환."""
@@ -87,9 +93,18 @@ class IncheonRouteService:
         return {"route_id": route_id, "stops": parse_route_stops_xml(text)}
 
     async def buses(self, route_id: str) -> dict:
-        """노선에서 현재 운행 중인 버스의 위치/차량번호."""
+        """노선에서 현재 운행 중인 버스의 위치/차량번호.
+
+        짧은 TTL 캐시로 상류 API 호출을 줄여 일일 할당량을 아끼고,
+        할당량 초과/일시 장애 시엔 마지막 캐시로 폴백한다.
+        """
         if self._use_mock:
             return {"route_id": route_id, "buses": _MOCK_BUSES}
+
+        now = time.monotonic()
+        cached = self._buses_cache.get(route_id)
+        if cached is not None and now - cached[0] < self._buses_ttl:
+            return cached[1]
 
         url = self._loc_base + "/getBusRouteLocation"
         params = {"serviceKey": self._key, "routeId": route_id, "numOfRows": "200", "pageNo": "1"}
@@ -97,7 +112,14 @@ class IncheonRouteService:
             resp = await self._client.get(url, params=params, timeout=self._timeout)
             resp.raise_for_status()
         except httpx.HTTPError as exc:
+            # 할당량 초과(429) 등: 마지막 캐시가 있으면 그대로 보여주고, 타임스탬프만
+            # 갱신해 다음 폴링까지 재시도를 늦춘다(장애 중 상류 재호출 억제).
+            if cached is not None:
+                logger.warning("버스 위치 조회({}) 실패, 캐시 사용: {}", route_id, exc)
+                self._buses_cache[route_id] = (now, cached[1])
+                return cached[1]
             raise BusApiError(f"버스 위치 조회({route_id}) 실패: {exc}") from exc
+
         buses = parse_bus_locations_xml(resp.text)
         # 인천 위치서비스는 여석/혼잡도/정류소를 주지만 좌표(위경도)는 없다.
         # TAGO 실시간 GPS 를 차량번호(plate)로 병합해 지도에 실좌표를 얹는다.
@@ -109,7 +131,9 @@ class IncheonRouteService:
                 await self._track_repo.record(route_id, buses)
             except Exception as exc:  # noqa: BLE001 - 학습 실패가 조회를 막지 않도록
                 logger.debug("경로 자취 저장({}) 실패: {}", route_id, exc)
-        return {"route_id": route_id, "buses": buses}
+        result = {"route_id": route_id, "buses": buses}
+        self._buses_cache[route_id] = (now, result)
+        return result
 
     async def track(self, route_id: str) -> dict:
         """누적된 실시간 GPS 자취(도로 경로 학습 결과)를 반환한다."""

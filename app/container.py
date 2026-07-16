@@ -67,6 +67,7 @@ class Container:
             tago_enabled=settings.tago_enabled,
             track_repo=track_repo,
             track_min_hits=settings.track_min_hits,
+            buses_cache_ttl=settings.buses_cache_ttl,
         )
         scheduler = BusScheduler(notify_service, settings.check_interval)
 
