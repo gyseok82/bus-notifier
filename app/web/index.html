@@ -508,7 +508,7 @@
       activePaint=paint;
       paint();
       loadBuses(false);
-      busTimer=setInterval(()=>loadBuses(false),20000);
+      busTimer=setInterval(()=>loadBuses(false),10000);
       window.addEventListener("resize",()=>{ if(mapInst)mapInst.invalidateSize(); if(kmap)kmap.relayout(); },{passive:true});
     }
 
